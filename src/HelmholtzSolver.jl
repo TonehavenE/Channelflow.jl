@@ -1,107 +1,172 @@
+"""
+Implements a solver for 1d Helmholtz Equation of the form
+
+```math
+nu u'' - lambda u = f on [a, b]
+```
+
+with Dirichlet or Neumann boundary conditions at `a` and `b`.
+"""
 module HelmholtzSolver
 
-using ..Collocation
-using FFTW, LinearAlgebra
+using ..ChebyCoeffs
+using ..BandedTridiags
 
-export solve_helmholtz
-"""
-    solve_helmholtz(grid::AbstractGrid, α::Real, β::Real, f::Vector{Float64})
+@enum Parity even = 0 odd = 1
 
-Solve the Helmholtz equation `(α * I - β * D2) u = f` for a given 1D grid.
-
-Returns the solution vector `u`.
-"""
-function solve_helmholtz(grid::AbstractGrid, α::Real, β::Real, f::Vector{Float64}; bc::Union{Nothing,Dict})
-    error("solve_helmholtz not implemented for grid type $(typeof(grid))")
+struct CoeffVariables
+    lambda::Real
+    nu::Real
+    c::Function
+    beta::Function
 end
 
 
-function apply_boundary_conditions!(grid::AbstractGrid, A::Matrix, f::Vector, bc::Dict)
-    # Apply BC modifications depending on bc dict
-    if haskey(bc, :left)
-        bctype, bcval = bc[:left]
-        if bctype == :Dirichlet
-            A[1, :] .= 0
-            A[1, 1] = 1
-            f[1] = bcval
-        elseif bctype == :Neumann
-            A[1, :] .= grid.D[1].data[1, :]
-            f[1] = bcval
-        else
-            error("Unsupported left BC type $bctype")
+# see CHQZ1 (5.1.24) on page 130
+function left_lower_coeff(n::Int, v::CoeffVariables)
+    -(v.c(n - 2) * v.lambda) / (4 * n * (n - 1))
+end
+
+function left_diag_coeff(n::Int, v::CoeffVariables)
+    (v.nu + (v.beta(n) * v.lambda) / (2 * (n^2 - 1)))
+end
+
+function left_upper_coeff(n::Int, v::CoeffVariables)
+    -(v.beta(n + 2) * v.lambda) / (4 * n * (n + 1))
+end
+
+function left_coeffs(n::Int, v::CoeffVariables)
+    (left_lower_coeff(n, v), left_diag_coeff(n, v), left_upper_coeff(n, v))
+end
+
+function right_lower_coeff(n::Int, v::CoeffVariables)
+    v.c(n - 2) / (4 * n * (n - 1))
+end
+
+function right_diag_coeff(n::Int, v::CoeffVariables)
+    -v.beta(n) / (2 * (n^2 - 1))
+end
+
+function right_upper_coeff(n::Int, v::CoeffVariables)
+    v.beta(n + 2) / (4 * n * (n + 1))
+end
+
+function right_coeffs(n::Int, v::CoeffVariables)
+    (right_lower_coeff(n, v), right_diag_coeff(n, v), right_upper_coeff(n, v))
+end
+
+function build_left_tridiag(v::CoeffVariables, numModes::Int, parity::Parity)::BandedTridiag
+    A = BandedTridiag(numModes)
+    for i in 1::numModes
+        A[1, i] = 1.0
+    end
+
+    for i in 2::numModes
+        n = 2 * (i - 1)
+        if parity == odd
+            n += 1
+        end
+
+        lower_coeff, diag_coeff, upper_coeff = left_coeffs(n, v)
+        A.lower[i] = lower_coeff
+        A.diag[i] = diag_coeff
+        if upper_coeff != 0.0
+            A.upper[i] = upper_coeff
         end
     end
-    if haskey(bc, :right)
-        bctype, bcval = bc[:right]
-        if bctype == :Dirichlet
-            A[end, :] .= 0
-            A[end, end] = 1
-            f[end] = bcval
-        elseif bctype == :Neumann
-            A[end, :] .= grid.D[1].data[end, :]
-            f[end] = bcval
-        else
-            error("Unsupported right BC type $bctype")
+    A
+end
+
+
+function build_right_tridiag(
+    v::CoeffVariables,
+    numModes::Int,
+    parity::Parity,
+)::BandedTridiag
+    B = BandedTridiag(numModes)
+
+    # Assign first row
+    B.diag[1] = 1.0
+
+    # Assign other rows
+    for i in 2::numModes
+        n = 2 * (i - 1)
+        if parity == odd
+            n += 1
         end
-    end # Apply BC modifications depending on bc dict
-    if haskey(bc, :left)
-        bctype, bcval = bc[:left]
-        if bctype == :Dirichlet
-            A[1, :] .= 0
-            A[1, 1] = 1
-            f[1] = bcval
-        elseif bctype == :Neumann
-            A[1, :] .= grid.D[1].data[1, :]
-            f[1] = bcval
-        else
-            error("Unsupported left BC type $bctype")
+
+        lower_coeff, diag_coeff, upper_coeff = right_coeffs(n, v)
+        B.lower[i] = lower_coeff
+        B.diag[i] = diag_coeff
+        if upper_coeff != 0.0
+            B.upper[i] = upper_coeff
         end
     end
-    if haskey(bc, :right)
-        bctype, bcval = bc[:right]
-        if bctype == :Dirichlet
-            A[end, :] .= 0
-            A[end, end] = 1
-            f[end] = bcval
-        elseif bctype == :Neumann
-            A[end, :] .= grid.D[1].data[end, :]
-            f[end] = bcval
-        else
-            error("Unsupported right BC type $bctype")
-        end
+
+    B
+end
+struct HelmholtzProblem
+    number_modes::Int
+    a::Real
+    b::Real
+    lambda::Real
+    nu::Real
+
+    # "private"
+    N::Int
+    nEvenModes::Int
+    nOddModes::Int
+    c::Function
+    β::Function
+    # Store matrix form of the equation
+    Aeven::BandedTridiag
+    Aodd::BandedTridiag
+    Beven::BandedTridiag
+    Bodd::BandedTridiag
+
+    function HelmholtzProblem(
+        number_modes::Int,
+        a::Real,
+        b::Real,
+        lambda::Real,
+        nu::Real=1.0,
+    )
+        @assert number_modes % 2 == 1 "must be odd"
+        @assert number_modes > 2 "must have at least three modes"
+
+        N = number_modes - 1
+        nEvenModes = div(N, 2) + 1
+        nOddModes = div(N, 2)
+        c(n) = (n == 0 || n == N) ? 2 : 1
+        β(n) = (n > N - 2) ? 0 : 1
+        nuscaled = nu / (((b - a) / 2)^2)
+        v = CoeffVariables(lambda, nuscaled, c, β)
+        Ae = build_left_tridiag(v, nEvenModes, even)
+        Ao = build_left_tridiag(v, nOddModes, odd)
+        Be = build_right_tridiag(v, nEvenModes, even)
+        Bo = build_right_tridiag(v, nOddModes, odd)
+        UL_decompose!(Ae)
+        UL_decompose!(Ao)
+
+        new(number_modes, a, b, lambda, nu, N, nEvenModes, nOddModes, c, β, Ae, Ao, Be, Bo)
     end
 end
 
-function solve_helmholtz(grid::ChebyshevGrid, α::Real, β::Real, f::Vector{Float64}; bc::Union{Nothing,Dict}=nothing)
-    N = length(f)
-    @assert size(get_derivative_matrix(grid, 2).data) == (N, N) "Dimension mismatch between D2 and f"
+function solve(h::HelmholtzProblem, u::ChebyCoeff, f::ChebyCoeff, umean::Real, ua::Real, ub::Real)
+    @assert f.state == Spectral
 
-    # Build Helmholtz matrix
-    A = α * I(N) - β * get_derivative_matrix(grid, 2).data
+    h.Beven.multiply_strided!(f, u, 0, 2)
+    h.Bodd.multiply_strided!(f, u, 1, 2)
 
-    if bc !== nothing
-        apply_boundary_conditions!(grid, A, f, bc)
-    end
+    u[1] = (ub + ua) / 2
+    u[2] = (ub - ua) / 2
 
-    # Solve linear system
-    u = A \ f
-    return u
+    UL_solve_strided(Ae, u, 0, 2)
+    UL_solve_strided(Ao, u, 1, 2)
+
+    u.setState!(Spectral)
 end
 
-function solve_helmholtz(grid::FourierGrid, α::Real, β::Real, f::Vector{Float64})
-    N = length(f)
-    k = grid.wave_numbers
-    @assert length(k) == N "Dimension mismatch between k and f"
-
-    f_hat = fft(f)
-    denom = α .+ β .* (k .^ 2)
-
-    # Avoid division by zero (if any denom entries are zero, handle accordingly)
-    @assert all(abs.(denom) .> 1e-14) "Denominator near zero, check α and β"
-
-    u_hat = f_hat ./ denom
-    u = real(ifft(u_hat))
-    return u
-end
+function verify(u::ChebyCoeff, f::ChebyCoeff, umean::Real, ua::Real, ub::Real) end
 
 end
