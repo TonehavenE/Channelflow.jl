@@ -1,0 +1,172 @@
+"""
+Implements a solver for 1d Helmholtz Equation of the form
+
+```math
+nu u'' - lambda u = f on [a, b]
+```
+
+with Dirichlet or Neumann boundary conditions at `a` and `b`.
+"""
+module HelmholtzSolver
+
+using ..ChebyCoeffs
+using ..BandedTridiags
+
+@enum Parity even = 0 odd = 1
+
+struct CoeffVariables
+    lambda::Real
+    nu::Real
+    c::Function
+    beta::Function
+end
+
+
+# see CHQZ1 (5.1.24) on page 130
+function left_lower_coeff(n::Int, v::CoeffVariables)
+    -(v.c(n - 2) * v.lambda) / (4 * n * (n - 1))
+end
+
+function left_diag_coeff(n::Int, v::CoeffVariables)
+    (v.nu + (v.beta(n) * v.lambda) / (2 * (n^2 - 1)))
+end
+
+function left_upper_coeff(n::Int, v::CoeffVariables)
+    -(v.beta(n + 2) * v.lambda) / (4 * n * (n + 1))
+end
+
+function left_coeffs(n::Int, v::CoeffVariables)
+    (left_lower_coeff(n, v), left_diag_coeff(n, v), left_upper_coeff(n, v))
+end
+
+function right_lower_coeff(n::Int, v::CoeffVariables)
+    v.c(n - 2) / (4 * n * (n - 1))
+end
+
+function right_diag_coeff(n::Int, v::CoeffVariables)
+    -v.beta(n) / (2 * (n^2 - 1))
+end
+
+function right_upper_coeff(n::Int, v::CoeffVariables)
+    v.beta(n + 2) / (4 * n * (n + 1))
+end
+
+function right_coeffs(n::Int, v::CoeffVariables)
+    (right_lower_coeff(n, v), right_diag_coeff(n, v), right_upper_coeff(n, v))
+end
+
+function build_left_tridiag(v::CoeffVariables, numModes::Int, parity::Parity)::BandedTridiag
+    A = BandedTridiag(numModes)
+    for i in 1::numModes
+        A[1, i] = 1.0
+    end
+
+    for i in 2::numModes
+        n = 2 * (i - 1)
+        if parity == odd
+            n += 1
+        end
+
+        lower_coeff, diag_coeff, upper_coeff = left_coeffs(n, v)
+        A.lower[i] = lower_coeff
+        A.diag[i] = diag_coeff
+        if upper_coeff != 0.0
+            A.upper[i] = upper_coeff
+        end
+    end
+    A
+end
+
+
+function build_right_tridiag(
+    v::CoeffVariables,
+    numModes::Int,
+    parity::Parity,
+)::BandedTridiag
+    B = BandedTridiag(numModes)
+
+    # Assign first row
+    B.diag[1] = 1.0
+
+    # Assign other rows
+    for i in 2::numModes
+        n = 2 * (i - 1)
+        if parity == odd
+            n += 1
+        end
+
+        lower_coeff, diag_coeff, upper_coeff = right_coeffs(n, v)
+        B.lower[i] = lower_coeff
+        B.diag[i] = diag_coeff
+        if upper_coeff != 0.0
+            B.upper[i] = upper_coeff
+        end
+    end
+
+    B
+end
+struct HelmholtzProblem
+    number_modes::Int
+    a::Real
+    b::Real
+    lambda::Real
+    nu::Real
+
+    # "private"
+    N::Int
+    nEvenModes::Int
+    nOddModes::Int
+    c::Function
+    β::Function
+    # Store matrix form of the equation
+    Aeven::BandedTridiag
+    Aodd::BandedTridiag
+    Beven::BandedTridiag
+    Bodd::BandedTridiag
+
+    function HelmholtzProblem(
+        number_modes::Int,
+        a::Real,
+        b::Real,
+        lambda::Real,
+        nu::Real=1.0,
+    )
+        @assert number_modes % 2 == 1 "must be odd"
+        @assert number_modes > 2 "must have at least three modes"
+
+        N = number_modes - 1
+        nEvenModes = div(N, 2) + 1
+        nOddModes = div(N, 2)
+        c(n) = (n == 0 || n == N) ? 2 : 1
+        β(n) = (n > N - 2) ? 0 : 1
+        nuscaled = nu / (((b - a) / 2)^2)
+        v = CoeffVariables(lambda, nuscaled, c, β)
+        Ae = build_left_tridiag(v, nEvenModes, even)
+        Ao = build_left_tridiag(v, nOddModes, odd)
+        Be = build_right_tridiag(v, nEvenModes, even)
+        Bo = build_right_tridiag(v, nOddModes, odd)
+        UL_decompose!(Ae)
+        UL_decompose!(Ao)
+
+        new(number_modes, a, b, lambda, nu, N, nEvenModes, nOddModes, c, β, Ae, Ao, Be, Bo)
+    end
+end
+
+function solve(h::HelmholtzProblem, u::ChebyCoeff, f::ChebyCoeff, umean::Real, ua::Real, ub::Real)
+    @assert f.state == Spectral
+
+    h.Beven.multiply_strided!(f, u, 0, 2)
+    h.Bodd.multiply_strided!(f, u, 1, 2)
+
+    u[1] = (ub + ua) / 2
+    u[2] = (ub - ua) / 2
+
+    UL_solve_strided(Ae, u, 0, 2)
+    UL_solve_strided(Ao, u, 1, 2)
+
+    u.setState!(Spectral)
+end
+
+function verify(u::ChebyCoeff, f::ChebyCoeff, umean::Real, ua::Real, ub::Real) end
+
+end
