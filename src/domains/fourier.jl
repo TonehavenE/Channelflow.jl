@@ -1,14 +1,17 @@
 module Fourier
 
 using ..Grid
+import ..get_derivative_matrix
+
 using LinearAlgebra, FFTW
 
-export FourierGrid, fourier_derivative_matrix
+export FourierGrid, fourier_derivative_matrix, get_derivative_matrix
 
 struct FourierGrid <: SpectralGrid
     N::Int
     L::Real
     x::CollocationPoints
+    D::Dict{Int,DerivativeMatrix}
     wave_numbers::WaveNumbers
 end
 
@@ -35,14 +38,24 @@ function fourier_derivative_matrix(N::Int, L::Real, order::Int=1)::DerivativeMat
 
     # Construct the full derivative matrix by applying FFT method to each basis vector
     D = hcat([derivative(Id[:, j], k, order) for j in 1:N]...)
-    return DerivativeMatrix{order}(D)
+    return DerivativeMatrix(D)
 end
 
 function FourierGrid(N::Int, L::Real)::FourierGrid
     x = fourier_points(N, L)
     k = wavenumbers(N, L)
-    return FourierGrid(N, L, x, k)
+    D1 = fourier_derivative_matrix(N, L, 1)
+    return FourierGrid(N, L, x, Dict(1 => D1), k)
 end
 
+function get_derivative_matrix(grid::FourierGrid, i::Int)::DerivativeMatrix
+    if haskey(grid.D, i)
+        return grid.D[i]
+    else
+        D = fourier_derivative_matrix(grid.N, grid.L, i)
+        grid.D[i] = D
+        return D
+    end
+end
 
 end

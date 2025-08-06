@@ -12,7 +12,7 @@ const CollocationPoints = Vector{Float64}
 const Weights = Vector{Float64}
 const WaveNumbers = Vector{Float64}
 
-struct DerivativeMatrix{Order}
+struct DerivativeMatrix
     data::Matrix{Float64}
 end
 Base.getindex(D::DerivativeMatrix, i::Int, j::Int) = D.data[i, j]
@@ -22,6 +22,7 @@ Base.:*(D::DerivativeMatrix, v::AbstractArray) = D.data * v
 function collocation_points(grid::AbstractGrid)
     grid.x
 end
+
 
 end
 

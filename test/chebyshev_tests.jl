@@ -14,6 +14,6 @@ using Channelflow
     # Test D on u(x) = x^2, where u'' = 2
     u = grid.x .^ 2
     uxx_exact = fill(2.0, N)
-    uxx_numeric = grid.D2 * u
+    uxx_numeric = get_derivative_matrix(grid, 2) * u
     @test maximum(abs.(uxx_exact - uxx_numeric)) < 1e-3
 end

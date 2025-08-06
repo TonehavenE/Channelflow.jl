@@ -12,7 +12,7 @@ using Channelflow
 
     # Test derivative on u(x) = sin(x), where u' = cos(x)
     u = sin.(grid.x)
-    derivative = fourier_derivative_matrix(grid.N, grid.L, 1)
+    derivative = get_derivative_matrix(grid, 1)
 
     u_exact = cos.(grid.x)
     u_numeric = real(derivative * u)

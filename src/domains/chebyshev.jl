@@ -1,17 +1,18 @@
 module Chebyshev
 
 using ..Grid
+import ..get_derivative_matrix
 using LinearAlgebra
 
-export ChebyshevGrid, chebyshev_derivative_matrix
+export ChebyshevGrid, chebyshev_derivative_matrix, get_derivative_matrix
 
 struct ChebyshevGrid <: SpectralGrid
     N::Int
     L::Tuple{<:Real,<:Real}
     x::CollocationPoints
-    weights::Weights
-    D1::DerivativeMatrix{1}
-    D2::DerivativeMatrix{2}
+    D::Dict{Int,DerivativeMatrix}
+    # D1::DerivativeMatrix{1}
+    # D2::DerivativeMatrix{2}
 end
 
 
@@ -37,7 +38,7 @@ end
 
 
 """
-	chebyshev_points(points, degree)
+	chebyshev_derivative_matrix(points, degree)
 
 Generates the Chebyshev Derivative Matrix of `degree` at the (Chebyshev-Gauss-Lobatto) `points`.
 """
@@ -64,7 +65,7 @@ function chebyshev_derivative_matrix(points::CollocationPoints, degree::Int=1)::
     for _ in 2:degree
         Dk = Dk * D
     end
-    return DerivativeMatrix{degree}(Dk)
+    return DerivativeMatrix(Dk)
 end
 
 function chebyshev_derivative_matrix(N::Int, L::Union{<:Real,Tuple{<:Real,<:Real}}, degree::Int=1)::DerivativeMatrix
@@ -73,11 +74,25 @@ function chebyshev_derivative_matrix(N::Int, L::Union{<:Real,Tuple{<:Real,<:Real
 end
 
 function ChebyshevGrid(N::Int, L::Tuple{<:Real,<:Real}=(-1.0, 1.0))::ChebyshevGrid
-    w = Weights(ones(N))  # Placeholder; can be improved later
     x = chebyshev_points(N, L)
     D1 = chebyshev_derivative_matrix(x, 1)
-    D2 = DerivativeMatrix{2}(D1.data * D1.data)
-    return ChebyshevGrid(N, L, x, w, D1, D2)
+    # D2 = DerivativeMatrix{2}(D1.data * D1.data)
+    return ChebyshevGrid(N, L, x, Dict(1 => D1))
+    # return ChebyshevGrid(N, L, x, w, D1, D2)
+end
+
+function get_derivative_matrix(grid::ChebyshevGrid, i::Int)::DerivativeMatrix
+    D = get(grid.D, i, -1)
+
+    if D == -1
+        D1 = get(grid.D, 1, -1)
+        D = D1
+        for j in 2:i
+            D = DerivativeMatrix(D.data * D1.data)
+            grid.D[j] = D
+        end
+    end
+    return D
 end
 
 end

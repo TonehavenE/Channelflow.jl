@@ -25,7 +25,7 @@ function apply_boundary_conditions!(grid::AbstractGrid, A::Matrix, f::Vector, bc
             A[1, 1] = 1
             f[1] = bcval
         elseif bctype == :Neumann
-            A[1, :] .= grid.D1.data[1, :]
+            A[1, :] .= grid.D[1].data[1, :]
             f[1] = bcval
         else
             error("Unsupported left BC type $bctype")
@@ -38,7 +38,7 @@ function apply_boundary_conditions!(grid::AbstractGrid, A::Matrix, f::Vector, bc
             A[end, end] = 1
             f[end] = bcval
         elseif bctype == :Neumann
-            A[end, :] .= grid.D1.data[end, :]
+            A[end, :] .= grid.D[1].data[end, :]
             f[end] = bcval
         else
             error("Unsupported right BC type $bctype")
@@ -51,7 +51,7 @@ function apply_boundary_conditions!(grid::AbstractGrid, A::Matrix, f::Vector, bc
             A[1, 1] = 1
             f[1] = bcval
         elseif bctype == :Neumann
-            A[1, :] .= grid.D1.data[1, :]
+            A[1, :] .= grid.D[1].data[1, :]
             f[1] = bcval
         else
             error("Unsupported left BC type $bctype")
@@ -64,7 +64,7 @@ function apply_boundary_conditions!(grid::AbstractGrid, A::Matrix, f::Vector, bc
             A[end, end] = 1
             f[end] = bcval
         elseif bctype == :Neumann
-            A[end, :] .= grid.D1.data[end, :]
+            A[end, :] .= grid.D[1].data[end, :]
             f[end] = bcval
         else
             error("Unsupported right BC type $bctype")
@@ -74,10 +74,10 @@ end
 
 function solve_helmholtz(grid::ChebyshevGrid, α::Real, β::Real, f::Vector{Float64}; bc::Union{Nothing,Dict}=nothing)
     N = length(f)
-    @assert size(grid.D2.data) == (N, N) "Dimension mismatch between D2 and f"
+    @assert size(get_derivative_matrix(grid, 2).data) == (N, N) "Dimension mismatch between D2 and f"
 
     # Build Helmholtz matrix
-    A = α * I(N) - β * grid.D2.data
+    A = α * I(N) - β * get_derivative_matrix(grid, 2).data
 
     if bc !== nothing
         apply_boundary_conditions!(grid, A, f, bc)
