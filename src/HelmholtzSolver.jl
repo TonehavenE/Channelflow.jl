@@ -61,17 +61,20 @@ function build_left_tridiag(v::CoeffVariables, numModes::Int, parity::Parity)::B
         A[1, i] = 1.0
     end
 
-    for i in 2:numModes-1
+    for i in 2:numModes-1 # i is row here
         n = 2 * (i - 1)
         if parity == Odd
             n += 1
         end
 
         lower_coeff, diag_coeff, upper_coeff = left_coeffs(n, v)
-        A.lower[i] = lower_coeff
-        A.diag[i] = diag_coeff
+        # A.lower[i] = lower_coeff
+        # A.diag[i] = diag_coeff
+        A[i, i-1] = lower_coeff
+        A[i, i] = diag_coeff
         if upper_coeff != 0.0
-            A.upper[i] = upper_coeff
+            # A.upper[i] = upper_coeff
+            A[i, i+1] = upper_coeff
         end
     end
     A
@@ -86,7 +89,7 @@ function build_right_tridiag(
     B = BandedTridiag(numModes)
 
     # Assign first row
-    B.diag[1] = 1.0
+    B[1, 1] = 1.0
 
     # Assign other rows
     for i in 2:numModes-1
@@ -96,10 +99,13 @@ function build_right_tridiag(
         end
 
         lower_coeff, diag_coeff, upper_coeff = right_coeffs(n, v)
-        B.lower[i] = lower_coeff
-        B.diag[i] = diag_coeff
+        # B.lower[i] = lower_coeff
+        # B.diag[i] = diag_coeff
+        B[i, i-1] = lower_coeff
+        B[i, i] = diag_coeff
         if upper_coeff != 0.0
-            B.upper[i] = upper_coeff
+            # B.upper[i] = upper_coeff
+            B[i, i+1] = upper_coeff
         end
     end
 

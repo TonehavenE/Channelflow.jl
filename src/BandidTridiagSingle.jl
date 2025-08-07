@@ -1,4 +1,4 @@
-module BandedTridiags
+module BandedTridiagsFixed
 
 using ..ChebyCoeffs
 
@@ -6,87 +6,110 @@ export BandedTridiag, UL_decompose!, UL_solve!, UL_solve_strided!, multiply_stri
 
 mutable struct BandedTridiag{T<:Number}
     num_rows::Int
-    first_row::Vector{T}
-    lower::Vector{T}
-    diag::Vector{T}
-    upper::Vector{T}
+    a::Vector{T}
+    inv_diag::Vector{T}
     is_decomposed::Bool
 end
 
 function BandedTridiag(size::T) where {T<:Number}
-    first_row = zeros(size)
-    lower = zeros(size - 1)
-    diag = zeros(size)
-    upper = zeros(size - 1)
-    BandedTridiag(size, first_row, lower, diag, upper, false)
+    inv_diag = zeros(size - 1)
+    a = zeros(4 * size - 2)
+    BandedTridiag(size, a, inv_diag, false)
 end
 
 Base.size(A::BandedTridiag) = (length(A.first_row), length(A.first_row)) # must be square
 
-function Base.getindex(A::BandedTridiag, row::Int, col::Int)
-    if row == 1
-        return A.first_row[col]
-    end
-
-    shifted_row = row - 1 # diags start at row = 1, not row = 0
-
-    if col == row - 1
-        return shifted_row >= 1 ? A.lower[shifted_row] : zero(eltype(A.lower))
-    elseif col == row
-        return A.diag[shifted_row]
-    elseif col == row + 1
-        return shifted_row <= length(A.upper) ? A.upper[shifted_row] : zero(eltype(A.upper))
-    else
-        return zero(eltype(A.diag)) # off the diagonal
-    end
+function get_band(A::BandedTridiag, j::Int)
+    # C++: return a_[Mbar_ - j] where Mbar_ = M_ - 1
+    # Julia 1-based index: (A.M - 1) - j + 1  =  A.M - j
+    return A.a[A.num_rows-j]
 end
 
-function Base.setindex!(A::BandedTridiag{T}, val::T, row::Int, col::Int) where {T}
-    if row == 1
-        if col == 1
-            A.diag[1] = val
-        elseif col == 2
-            A.upper[1] = val
-        end
-        A.first_row[col] = val
-    elseif col == row + 1
-        A.upper[row] = val
-    elseif row == col + 1
-        A.lower[col] = val
-    elseif row == col
-        A.diag[row] = val
+function get_diag(A::BandedTridiag, i::Int)
+    # C++: return d_[3 * i] where d_ = a_ + M_ - 1
+    # d_ starts at Julia index M. So, the final index is M + 3*i
+    d_start_index = A.num_rows
+    return A.a[d_start_index+3*i]
+end
+
+function get_upper(A::BandedTridiag, i::Int)
+    # C++: return d_[3 * i - 1]
+    d_start_index = A.num_rows
+    return A.a[d_start_index+3*i-1]
+end
+
+function get_lower(A::BandedTridiag, i::Int)
+    # C++: return d_[3 * i + 1]
+    d_start_index = A.num_rows
+    return A.a[d_start_index+3*i+1]
+end
+
+function set_band!(A::BandedTridiag{T}, j::int, val{T}) where {T<:Number}
+    A.a[A.num_rows-j] = val
+end
+function set_diag!(A::BandedTridiag{T}, i::int, val{T}) where {T<:Number}
+    d_start_index = A.num_rows
+    A.a[d_start_index+3*i] = val
+end
+function set_upper!(A::BandedTridiag{T}, i::int, val{T}) where {T<:Number}
+    d_start_index = A.num_rows
+    A.a[d_start_index+3*i - 1] = val
+end
+function set_lower!(A::BandedTridiag{T}, i::int, val{T}) where {T<:Number}
+    d_start_index = A.num_rows
+    A.a[d_start_index+3*i + 1] = val
+end
+
+function Base.getindex(A::BandedTridiag, i::Int, j::Int)
+	@assert i == 0 || (i >= 0 && i < A.num_rows && j >= 0 && j < A.num_rows && abs(i - j) <= 1);
+    if (i == 0)
+        return get_band(A, j);
+    else if (i == j)
+        return get_diag(A, i);
+    else if (i < j)
+        return get_upper(A, i);
+    else
+        return get_lower(A, i);
+	end
+end
+
+function Base.setindex!(A::BandedTridiag{T}, val::T, i::Int, j::Int) where {T}
+    if i == 1
+		set_band!(A, j, val)
+    elseif j == i + 1
+		set_upper!(A, i, val)
+    elseif i == j + 1
+		set_lower!(A, j, val)
+    elseif i == j
+		set_diag!(A, i, val)
     else
         throw(ArgumentError("Cannot set value outside band in BandedTridiag"))
     end
 end
+
 
 function UL_decompose!(A::BandedTridiag)
     w = 0.0 # A_{k, k-1}
     Akk = 0.0 # A_{k, k}
 
     for k = A.num_rows-1:2
-        # Akk = A.diag[k]
-        Akk = A[k, k]
+        Akk = A.diag[k]
         @assert Akk != 0.0
 
-        # w = A.lower[k]
-        # A.upper[k-1] /= Akk
-        # A.diag[k-1] -= w * A.upper[k-1]
-        w = A[k+1, k]
-        A[k-1, k] /= Akk
-        A[k-1, k-1] -= w * A[k-1, k]
+		w = get_lower(A, k)
+        A.upper[k-1] /= Akk
+        A.diag[k-1] -= w * A.upper[k-1]
 
-        # A.first_row[k-1] /= Akk
-        # A.first_row[k-1] -= w * A.first_row[k]
-        A[1, k-1] /= Akk
-        A[1, k-1] -= w * A[0, k]
+        A.first_row[k-1] /= Akk
+        A.first_row[k-1] -= w * A.first_row[k]
     end
 
     # Special Case for first row
-    A[1, 1] /= A[2, 2]
-    A[1, 1] -= A[3, 2] * A[1, 2]
-    # A.first_row[1] /= A.diag[2]
-    # A.first_row[1] -= A.lower[2] * A.first_row[2]
+    A.first_row[1] /= A.diag[2]
+    A.first_row[1] -= A.lower[2] * A.first_row[2]
+
+    # compute inverse diagonals
+    A.inv_diag = 1.0 ./ A.diag
 
     A.is_decomposed = true
 end
@@ -111,8 +134,8 @@ function UL_solve!(A::BandedTridiag{T}, b::AbstractVector{T}) where {T<:Number}
     # C++: b[0] /= diag(0)  -> diag(0) is stored as first_row[1] in Julia
     b[1] /= A.first_row[1]  # Diagonal element of first row
 
-    # C++: for (i = 1; i < M; ++i) => [1, 2, 3, ..., M - 1] 
-    for i = 2:M  # Julia 1-based: i = 2:M => [2, 3, 4, ... M]
+    # C++: for (i = 1; i < M; ++i) 
+    for i = 2:M  # Julia 1-based: i from 2 to M
         # C++: (b[i] -= lodiag(i) * b[i-1]) /= diag(i)
         b[i] -= A.lower[i-1] * b[i-1]    # lodiag(i-1) * b[i-1] 
         b[i] /= A.diag[i-1]              # diag(i-1) - diagonal for row i
@@ -156,7 +179,7 @@ function UL_solve_strided!(
         # Forward substitution
         b[2] /= A.diag[1]
         for i in 1:(M-1)
-            b[i+2] = (b[i+2] - A.lower[i+1] * b[i+1]) / A.diag[i+1]
+            b[i+2] = (b[i+2] - A.lower[i+1] * b[i+1]) * A.inv_diag[i+1]
         end
 
     elseif offset == 0 && stride == 2
@@ -172,8 +195,7 @@ function UL_solve_strided!(
         # Forward substitution
         b[1] /= A.diag[1]
         for i in 1:(M-1)
-            # b[2i+1] = (b[2i+1] - A.lower[i+1] * b[2(i-1)+1]) / A.diag[i+1]
-            b[2i+1] = (b[2i+1] - A[i+2, i+1])
+            b[2i+1] = (b[2i+1] - A.lower[i+1] * b[2(i-1)+1]) * A.inv_diag[i+1]
         end
 
     elseif offset == 1 && stride == 2
@@ -189,7 +211,7 @@ function UL_solve_strided!(
         # Forward substitution
         b[2] /= A.diag[1]
         for i in 1:(M-1)
-            b[2i+2] = (b[2i+2] - A.lower[i+1] * b[2i]) / A.diag[i+1]
+            b[2i+2] = (b[2i+2] - A.lower[i+1] * b[2i]) * A.inv_diag[i+1]
         end
 
     else
@@ -266,3 +288,4 @@ function multiply_strided!(x::ChebyCoeff, A::BandedTridiag{T}, b::ChebyCoeff, of
 end
 
 end
+
