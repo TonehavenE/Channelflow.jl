@@ -1,11 +1,11 @@
-module Channeflow
+module Channelflow
 
 include("Coefficients.jl")
-include("HelmholtzSolver.jl")
 include("BandedTridiag.jl")
+include("HelmholtzSolver.jl")
 
-using .BandedTridiags
 using .ChebyCoeffs
+using .BandedTridiags
 using .HelmholtzSolver
 
 end
