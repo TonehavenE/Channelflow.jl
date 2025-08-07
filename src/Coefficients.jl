@@ -353,23 +353,6 @@ end
 
 Base.:*(u::ChebyCoeff, c::Number) = c * u
 
-function Base.:*=(u::ChebyCoeff{T}, c::Number) where {T<:Number}
-    u.data .*= c
-    return u
-end
-
-function Base.:+=(u::ChebyCoeff{T}, v::ChebyCoeff{S}) where {T<:Number,S<:Number}
-    @assert congruent_structure(u, v) "ChebyCoeff objects must have compatible structure"
-    u.data .+= v.data
-    return u
-end
-
-function Base.:-=(u::ChebyCoeff{T}, v::ChebyCoeff{S}) where {T<:Number,S<:Number}
-    @assert congruent_structure(u, v) "ChebyCoeff objects must have compatible structure"
-    u.data .-= v.data
-    return u
-end
-
 """Pointwise multiplication (must be in Physical state)"""
 function Base.:*(u::ChebyCoeff{T}, v::ChebyCoeff{S}) where {T<:Number,S<:Number}
     @assert congruent_structure(u, v) "ChebyCoeff objects must have compatible structure"
