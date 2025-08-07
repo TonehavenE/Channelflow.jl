@@ -114,15 +114,14 @@ struct HelmholtzProblem
 
     # "private"
     N::Int
-    nEvenModes::Int
-    nOddModes::Int
+    n_even_modes::Int
+    n_odd_modes::Int
     c::Function
     β::Function
-    # Store matrix form of the equation
-    Aeven::BandedTridiag
-    Aodd::BandedTridiag
-    Beven::BandedTridiag
-    Bodd::BandedTridiag
+    A_even::BandedTridiag
+    A_odd::BandedTridiag
+    B_even::BandedTridiag
+    B_odd::BandedTridiag
 
     function HelmholtzProblem(
         number_modes::Int,
@@ -135,28 +134,28 @@ struct HelmholtzProblem
         @assert number_modes > 2 "must have at least three modes"
 
         N = number_modes - 1
-        nEvenModes = div(N, 2) + 1
-        nOddModes = div(N, 2)
+        n_even_modes = div(N, 2) + 1
+        n_odd_modes = div(N, 2)
         c(n) = (n == 0 || n == N) ? 2 : 1
         β(n) = (n > N - 2) ? 0 : 1
         nuscaled = nu / (((b - a) / 2)^2)
         v = CoeffVariables(lambda, nuscaled, c, β)
-        Ae = build_left_tridiag(v, nEvenModes, even)
-        Ao = build_left_tridiag(v, nOddModes, odd)
-        Be = build_right_tridiag(v, nEvenModes, even)
-        Bo = build_right_tridiag(v, nOddModes, odd)
+        Ae = build_left_tridiag(v, n_even_modes, even)
+        Ao = build_left_tridiag(v, n_odd_modes, odd)
+        Be = build_right_tridiag(v, n_even_modes, even)
+        Bo = build_right_tridiag(v, n_odd_modes, odd)
         UL_decompose!(Ae)
         UL_decompose!(Ao)
 
-        new(number_modes, a, b, lambda, nu, N, nEvenModes, nOddModes, c, β, Ae, Ao, Be, Bo)
+        new(number_modes, a, b, lambda, nu, N, n_even_modes, n_odd_modes, c, β, Ae, Ao, Be, Bo)
     end
 end
 
 function solve(h::HelmholtzProblem, u::ChebyCoeff, f::ChebyCoeff, umean::Real, ua::Real, ub::Real)
     @assert f.state == Spectral
 
-    h.Beven.multiply_strided!(f, u, 0, 2)
-    h.Bodd.multiply_strided!(f, u, 1, 2)
+    h.B_even.multiply_strided!(f, u, 0, 2)
+    h.B_odd.multiply_strided!(f, u, 1, 2)
 
     u[1] = (ub + ua) / 2
     u[2] = (ub - ua) / 2
