@@ -5,7 +5,7 @@ using FFTW
 export ChebyTransform, ChebyCoeff
 export makeSpectral!, makePhysical!, makeState!, setToZero!, setState!
 export chebyfft!, ichebyfft!
-export L2Norm2, L2Norm, L2InnerProduct
+export L2Norm2, L2Norm, L2InnerProduct, LinfNorm, L1Norm, mean_value, evaluate
 export chebyNorm2, chebyInnerProduct, chebyNorm
 export chebypoints
 export legendre_polynomial, chebyshev_polynomial
@@ -39,7 +39,7 @@ end
 function ChebyTransform(N::Int; flags=FFTW.ESTIMATE)
     @assert N > 0 "N must be positive"
     tmp = zeros(Float64, N)
-    cos_plan = FFTW.plan_r2r(tmp, FFTW.REDFT00; flags=flags)
+    cos_plan = FFTW.plan_r2r!(tmp, FFTW.REDFT00; flags=flags)
     ChebyTransform(N, cos_plan)
 end
 
@@ -179,7 +179,8 @@ function ichebyfft!(u::ChebyCoeff{T}, t::ChebyTransform) where {T<:Number}
 
     if T <: Real
         # Real case: direct inverse cosine transform
-        u.data .= t.cos_plan * u.data
+        tmp = t.cos_plan * u.data
+        u.data .= tmp
         u.data .*= 0.5
     else
         # Complex case: transform real and imaginary parts separately
