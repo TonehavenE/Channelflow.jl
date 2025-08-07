@@ -151,19 +151,26 @@ struct HelmholtzProblem
     end
 end
 
-function solve(h::HelmholtzProblem, u::ChebyCoeff, f::ChebyCoeff, umean::Real, ua::Real, ub::Real)
+function solve!(h::HelmholtzProblem, u::ChebyCoeff, f::ChebyCoeff, ua::Real, ub::Real)
     @assert f.state == Spectral
 
-    h.B_even.multiply_strided!(f, u, 0, 2)
-    h.B_odd.multiply_strided!(f, u, 1, 2)
+    multiply_strided!(f, h.B_even, u, 0, 2)
+    println("after first multiply_strided $(u.data)")
+    multiply_strided!(f, h.B_odd, u, 1, 2)
+    println("after second multiply_strided $(u.data)")
+
 
     u[1] = (ub + ua) / 2
     u[2] = (ub - ua) / 2
 
-    UL_solve_strided(Ae, u, 0, 2)
-    UL_solve_strided(Ao, u, 1, 2)
+    UL_solve_strided!(h.A_even, u, 0, 2)
+    println("after first solve_strided $(u.data)")
+    UL_solve_strided!(h.A_odd, u, 1, 2)
+    println("after second solve_strided $(u.data)")
 
-    u.setState!(Spectral)
+    setState!(u, Spectral)
+end
+
 """
 Let u = uf + um.
 Then solve:
