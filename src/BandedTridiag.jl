@@ -1,8 +1,10 @@
 module BandedTridiags
 
+using ..ChebyCoeffs
+
 export BandedTridiag, UL_decompose!, UL_solve!, UL_solve_strided!, multiply_strided!, multiply!
 
-struct BandedTridiag{T<:Number}
+mutable struct BandedTridiag{T<:Number}
     num_rows::Int
     first_row::Vector{T}
     lower::Vector{T}
@@ -86,20 +88,29 @@ function UL_solve!(A::BandedTridiag{T}, b::AbstractVector{T}) where {T<:Number}
     M = A.num_rows
     Mb = M - 1
 
+    # I think all the indices are wrong.
     # 1. Solve U·y = b (backward substitution)
-    for i = Mb-1:-1:1
+    for i = Mb-1:-1:2
         b[i+1] -= A.upper[i+1] * b[i+2]
     end
+    println("\n\nafter solving upper: $b")
 
     for j = 2:M-1 # first row needs special care
         b[1] -= A.first_row[j+1] * b[j+1]
     end
+    println("\n\nafter adjusting first row: $b")
 
     # 2. Solve L·x = y (forward substitution)
     b[1] /= A.diag[1]
-    for i = 2:M
-        b[i] = (b[i] - A.lower[i] * b[i-1]) * A.inv_diag[i]
+    for i = 2:M-1
+        b[i] -= A.lower[i] * b[i-1]
+        b[i] *= A.inv_diag[i]
     end
+    println("\n\nafter solving lower: $b")
+end
+
+function UL_solve!(A::BandedTridiag{T}, b::ChebyCoeff{T}) where {T<:Number}
+    UL_solve!(A, b.data)
 end
 
 function UL_solve_strided!(
@@ -110,6 +121,16 @@ function UL_solve_strided!(
 ) where {T<:Number}
     # view into B
     bv = @view b[offset+1:stride:end]
+    UL_solve!(A, bv)
+end
+function UL_solve_strided!(
+    A::BandedTridiag{T},
+    b::ChebyCoeff{T},
+    offset::Int,
+    stride::Int,
+) where {T<:Number}
+    # view into B
+    bv = @view b.data[offset+1:stride:end]
     UL_solve!(A, bv)
 end
 
@@ -160,9 +181,13 @@ function multiply_strided!(
             A.upper[i] * x[stride_index(i)]
     end
 
-    # final row
-    b[offset+stride*(M-1)+1] =
-        A.lower[M] * x[stride_index(M - 2)] + A.diag[M] * x[stride_index(M - 1)]
+    # final row CHECK THESE INDICES
+    b[stride_index(M - 1)] =
+        A.lower[Mbar] * x[stride_index(M - 2)] + A.diag[Mbar] * x[stride_index(M - 1)] # Are these indices right?
+end
+
+function multiply_strided!(x::ChebyCoeff, A::BandedTridiag{T}, b::ChebyCoeff, offset::Int, stride::Int) where {T<:Number}
+    multiply_strided!(x.data, A, b.data, offset, stride)
 end
 
 end
