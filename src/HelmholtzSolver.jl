@@ -57,13 +57,13 @@ end
 
 function build_left_tridiag(v::CoeffVariables, numModes::Int, parity::Parity)::BandedTridiag
     A = BandedTridiag(numModes)
-    for i in 1::numModes
+    for i in 1:numModes
         A[1, i] = 1.0
     end
 
-    for i in 2::numModes
+    for i in 2:numModes-1
         n = 2 * (i - 1)
-        if parity == odd
+        if parity == Odd
             n += 1
         end
 
@@ -89,9 +89,9 @@ function build_right_tridiag(
     B.diag[1] = 1.0
 
     # Assign other rows
-    for i in 2::numModes
+    for i in 2:numModes-1
         n = 2 * (i - 1)
-        if parity == odd
+        if parity == Odd
             n += 1
         end
 
@@ -140,10 +140,10 @@ struct HelmholtzProblem
         β(n) = (n > N - 2) ? 0 : 1
         nuscaled = nu / (((b - a) / 2)^2)
         v = CoeffVariables(lambda, nuscaled, c, β)
-        Ae = build_left_tridiag(v, n_even_modes, even)
-        Ao = build_left_tridiag(v, n_odd_modes, odd)
-        Be = build_right_tridiag(v, n_even_modes, even)
-        Bo = build_right_tridiag(v, n_odd_modes, odd)
+        Ae = build_left_tridiag(v, n_even_modes, Even)
+        Ao = build_left_tridiag(v, n_odd_modes, Odd)
+        Be = build_right_tridiag(v, n_even_modes, Even)
+        Bo = build_right_tridiag(v, n_odd_modes, Odd)
         UL_decompose!(Ae)
         UL_decompose!(Ao)
 
