@@ -164,6 +164,33 @@ function solve(h::HelmholtzProblem, u::ChebyCoeff, f::ChebyCoeff, umean::Real, u
     UL_solve_strided(Ao, u, 1, 2)
 
     u.setState!(Spectral)
+"""
+Let u = uf + um.
+Then solve:
+1. nu uf'' - lambda uf = f  with uf(±1) = ua, ub
+2. nu um'' - lambda um = mu with um(±1) = 0, 0
+"""
+function solve!(h::HelmholtzProblem, u::ChebyCoeff, f::ChebyCoeff, umean::Real, ua::Real, ub::Real)
+    @assert f.state == Spectral "must be spectral RHS"
+
+    N = h.number_modes
+    u_temp = ChebyCoeff(N, h.a, h.b, Spectral)
+    rhs_temp = ChebyCoeff(f)
+
+    solve!(h, u_temp, rhs_temp, ua, ub)
+
+    uamean = mean_value(u_temp)
+
+    setToZero!(rhs_temp)
+    rhs_temp[1] = h.nu
+    solve!(h, u_temp, rhs_temp, 0.0, 0.0)
+
+    ucmean = mean_value(u_temp)
+
+    mu = h.nu * (umean - uamean) / ucmean
+    rhs_temp = f
+    rhs_temp[1] += mu
+    solve!(h, u, rhs_temp, ua, ub)
 end
 
 function verify(u::ChebyCoeff, f::ChebyCoeff, umean::Real, ua::Real, ub::Real) end
