@@ -1,6 +1,7 @@
 module BandedTridiags
 
 using ..ChebyCoeffs
+using Printf
 
 export BandedTridiag, UL_decompose!, UL_solve!, UL_solve_strided!, multiply_strided!, multiply!
 
@@ -263,6 +264,32 @@ end
 
 function multiply_strided!(x::ChebyCoeff, A::BandedTridiag{T}, b::ChebyCoeff, offset::Int, stride::Int) where {T<:Number}
     multiply_strided!(x.data, A, b.data, offset, stride)
+end
+
+# Pretty printing
+function Base.show(io::IO, A::BandedTridiag{T}) where {T}
+    print(io, "$(A.M)×$(A.M) BandedTridiag{$T}")
+    if A.is_decomposed
+        print(io, " (UL-decomposed)")
+    end
+end
+
+function Base.display(A::BandedTridiag)
+    println("$(A.M)×$(A.M) BandedTridiag:")
+    for i = 1:A.M
+        print("  ")
+        for j = 1:A.M
+            if abs(i - j) ≤ 1 || i == 1
+                @printf "%f " A[i, j]
+            else
+                print(" 0 ")
+            end
+        end
+        println()
+    end
+    if A.is_decomposed
+        println("  (UL-decomposed)")
+    end
 end
 
 end
