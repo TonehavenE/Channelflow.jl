@@ -12,7 +12,7 @@ module HelmholtzSolver
 using ..ChebyCoeffs
 using ..BandedTridiags
 
-@enum Parity even = 0 odd = 1
+export HelmholtzProblem, solve!, test_helmholtz
 
 struct CoeffVariables
     lambda::Real
@@ -201,5 +201,36 @@ function solve!(h::HelmholtzProblem, u::ChebyCoeff, f::ChebyCoeff, umean::Real, 
 end
 
 function verify(u::ChebyCoeff, f::ChebyCoeff, umean::Real, ua::Real, ub::Real) end
+
+function test_helmholtz()
+    N = 63
+    lambda = 1
+    nu = 1
+    a = 0
+    b = pi
+    ua = 0
+    ub = 0
+    # analytic solution
+    f(x) = -8 * sin(3 * x)
+
+    # need to get discrete points to generate f
+    data = [f(x) for x in LinRange(a, b, N)]
+    println("Start: data is $data\n\n")
+    rhs = ChebyCoeff(data, a, b, Physical)
+    makeSpectral!(rhs)
+    println("\n\nrhs is: $rhs\n\n")
+
+    u = ChebyCoeff(N, a, b, Spectral)
+
+    println(u.data)
+
+    h = HelmholtzProblem(N, a, b, lambda, nu)
+
+    solve!(h, u, rhs, ua, ub)
+
+    println(u.data)
+    # println(data)
+    # @assert isapprox(u.data, data; atol=1e-5)
+end
 
 end
