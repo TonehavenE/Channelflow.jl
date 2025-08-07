@@ -2,15 +2,14 @@ module ChebyCoeffs
 
 using FFTW
 
-export FieldState
 export ChebyTransform, ChebyCoeff
-export makeSpectral!, makePhysical!, makeState!
+export makeSpectral!, makePhysical!, makeState!, setToZero!, setState!
 export chebyfft!, ichebyfft!
 export L2Norm2, L2Norm, L2InnerProduct
 export chebyNorm2, chebyInnerProduct, chebyNorm
 export chebypoints
 export legendre_polynomial, chebyshev_polynomial
-export FieldState, BC, Parity, NormType
+export FieldState, Physical, Spectral, BC, Diri, Neumann, Parity, Even, Odd, NormType, Uniform, Cheby
 
 @enum FieldState begin
     Physical
@@ -79,6 +78,10 @@ mutable struct ChebyCoeff{T<:Number}
         result.data[1:N_common] .= u.data[1:N_common]
         result
     end
+end
+
+function ChebyCoeff{T}(u::ChebyCoeff{T}) where {T<:Number}
+    ChebyCoeff(u.data, u.a, u.b, u.state)
 end
 
 # ============================================================================
