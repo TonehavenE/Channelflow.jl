@@ -15,8 +15,6 @@ l d u 0 0  <- tridiagonal rows
 0 0 l d u
 0 0 0 l d  <- last row
 ```
-
-Storage follows C++ channelflow convention with a single array.
 """
 mutable struct BandedTridiag{T<:Number}
     num_rows::Int              # number of rows (square matrix)
@@ -171,79 +169,41 @@ function UL_solve_strided!(A::BandedTridiag{T}, b::AbstractVector{T},
     @assert A.is_decomposed "Matrix must be UL-decomposed first"
     @assert offset in [0, 1] "offset must be 0 or 1"
     @assert stride in [1, 2] "stride must be 1 or 2"
-
-    Mb = A.num_rows - 1
-
-    # Convert to 1-based indexing for array access
-    offset_1based = offset + 1
-
-    if offset == 0 && stride == 1
-        # Standard case - matches C++ exactly
-
-        # Solve Uy=b by backsubstitution
-        # C++: for (i = Mb - 1; i > 0; --i) b[i] -= upper_diag(i) * b[i + 1];
-        for i = Mb:-1:2  # Julia: Mb down to 2 (C++: Mb-1 down to 1)
-            b[i] -= upper_diag(A, i) * b[i+1]
-        end
-
-        # C++: for (j = i + 1; j < M_; ++j) b[0] -= band(j) * b[j];
-        # After the loop, i = 0 in C++, so j goes from 1 to M-1
-        for j = 2:A.num_rows  # Julia: 2 to M (C++: 1 to M-1)
-            b[1] -= first_row(A, j) * b[j]
-        end
-
-        # Solve Lx=y by forward substitution
-        # C++: b[0] /= diag(0)
-        b[1] /= main_diag(A, 1)
-
-        # C++: for (i = 1; i < M_; ++i) (b[i] -= lodiag(i) * b[i - 1]) /= diag(i);
-        for i = 2:A.num_rows  # Julia: 2 to M (C++: 1 to M-1)
-            b[i] = (b[i] - lower_diag(A, i) * b[i-1]) * A.inv_diag[i]
-        end
-
+        
+    # Define index mapping function based on offset and stride
+    idx = if offset == 0 && stride == 1
+        i -> i
     elseif offset == 1 && stride == 1
-        # C++ implementation for offset=1, stride=1
-        for i = Mb:-1:2
-            b[offset_1based+i] -= upper_diag(A, i) * b[offset_1based+i+1]
-        end
-        for j = 2:A.num_rows
-            b[offset_1based] -= first_row(A, j) * b[offset_1based+j-1]
-        end
-        b[offset_1based] /= main_diag(A, 1)
-        for i = 2:A.num_rows
-            b[offset_1based+i-1] = (b[offset_1based+i-1] - lower_diag(A, i) * b[offset_1based+i-2]) * A.inv_diag[i]
-        end
-
+        i -> offset + 1 + i - 1
     elseif offset == 0 && stride == 2
-        # C++ implementation for offset=0, stride=2
-        for i = Mb:-1:2
-            b[stride*i-1] -= upper_diag(A, i) * b[stride*(i+1)-1]
-        end
-        for j = 2:A.num_rows
-            b[1] -= first_row(A, j) * b[stride*j-1]
-        end
-        b[1] /= main_diag(A, 1)
-        for i = 2:A.num_rows
-            b[stride*i-1] = (b[stride*i-1] - lower_diag(A, i) * b[stride*(i-1)-1]) * A.inv_diag[i]
-        end
-
+        i -> stride * i - 1
     elseif offset == 1 && stride == 2
-        # C++ implementation for offset=1, stride=2
-        for i = Mb:-1:2
-            b[offset_1based+stride*(i-1)] -= upper_diag(A, i) * b[offset_1based+stride*i]
-        end
-        for j = 2:A.num_rows
-            b[offset_1based] -= first_row(A, j) * b[offset_1based+stride*(j-1)]
-        end
-        b[offset_1based] /= main_diag(A, 1)
-        for i = 2:A.num_rows
-            b[offset_1based+stride*(i-1)] = (b[offset_1based+stride*(i-1)] - lower_diag(A, i) * b[offset_1based+stride*(i-2)]) * A.inv_diag[i]
-        end
-
+        i -> offset + 1 + stride * (i - 1)
     else
         error("Invalid offset/stride combination")
     end
-
+    
+    # Solve Uy=b by backsubstitution
+    for i = (A.num_rows - 1):-1:2
+        b[idx(i)] -= upper_diag(A, i) * b[idx(i+1)]
+    end
+    
+    # Handle first row
+    for j = 2:A.num_rows
+        first_row_idx = if offset == 1 && stride == 1
+            idx(1) + j - 1  # Special case for offset=1, stride=1
+        else
+            idx(j)
+        end
+        b[idx(1)] -= first_row(A, j) * b[first_row_idx]
+    end
+    
+    # Solve Lx=y by forward substitution
+    b[idx(1)] /= main_diag(A, 1)
+    for i = 2:A.num_rows
+        b[idx(i)] = (b[idx(i)] - lower_diag(A, i) * b[idx(i-1)]) * A.inv_diag[i]
+    end
+    
     return b
 end
 
@@ -261,35 +221,33 @@ function UL_solve_strided!(A::BandedTridiag{T}, b::ChebyCoeff{T},
     UL_solve_strided!(A, b.data, offset, stride)
 end
 
-"""Matrix-vector multiplication with strided access"""
+"""Matrix-vector multiplication with strided access using Julia idioms"""
 function multiply_strided!(x::AbstractVector{T}, A::BandedTridiag{T},
     b::AbstractVector{T}, offset::Int, stride::Int) where {T<:Number}
     @assert offset in [0, 1] "offset must be 0 or 1"
     @assert stride in [1, 2] "stride must be 1 or 2"
-
-    offset_1based = offset + 1
-    Mbar = A.num_rows - 1
-
-    # Row 0 (first row) - full band multiplication
-    sum_val = zero(T)
-    for j = 1:A.num_rows
-        sum_val += first_row(A, j) * x[offset_1based+stride*(j-1)]
+    
+    # Create a view into the vectors with the appropriate stride pattern
+    x_view = @view x[offset+1:stride:offset+1+stride*(A.num_rows-1)]
+    b_view = @view b[offset+1:stride:offset+1+stride*(A.num_rows-1)]
+    
+    # Row 1 - full band multiplication
+    b_view[1] = sum(first_row(A, j) * x_view[j] for j = 1:A.num_rows)
+    
+    # Rows 2 to num_rows-1 - tridiagonal structure
+    for i = 2:(A.num_rows-1)
+        b_view[i] = (lower_diag(A, i) * x_view[i-1] + 
+                     main_diag(A, i) * x_view[i] + 
+                     upper_diag(A, i) * x_view[i+1])
     end
-    b[offset_1based] = sum_val
-
-    # Rows 1 to Mbar-1 (tridiagonal structure)
-    for i = 2:Mbar
-        b[offset_1based+stride*(i-1)] =
-            lower_diag(A, i) * x[offset_1based+stride*(i-2)] +
-            main_diag(A, i) * x[offset_1based+stride*(i-1)] +
-            upper_diag(A, i) * x[offset_1based+stride*i]
+    
+    # Final row - only lower diagonal and main diagonal
+    if A.num_rows > 1
+        i = A.num_rows
+        b_view[i] = (lower_diag(A, i) * x_view[i-1] + 
+                     main_diag(A, i) * x_view[i])
     end
-
-    # Final row (only lower diagonal and diagonal)
-    b[offset_1based+stride*(A.num_rows-1)] =
-        lower_diag(A, A.num_rows) * x[offset_1based+stride*(A.num_rows-2)] +
-        main_diag(A, A.num_rows) * x[offset_1based+stride*(A.num_rows-1)]
-
+    
     return b
 end
 
@@ -351,11 +309,6 @@ function extract_UL_matrices(A::BandedTridiag{T}) where {T}
     U = zeros(T, M, M)
     L = zeros(T, M, M)
 
-    # In UL decomposition, typically:
-    # - U is upper triangular with 1's on diagonal
-    # - L is lower triangular 
-    # - The decomposed matrix stores L below diagonal, U above diagonal
-
     # Extract U matrix (upper triangular with 1's on diagonal)
     for i = 1:M
         U[i, i] = one(T)  # 1's on diagonal
@@ -373,6 +326,7 @@ function extract_UL_matrices(A::BandedTridiag{T}) where {T}
 
     return U, L
 end
+
 """
 Convert BandedTridiag to a full dense matrix for testing
 """
