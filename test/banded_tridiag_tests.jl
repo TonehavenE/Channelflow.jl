@@ -29,50 +29,50 @@ using LinearAlgebra
         N = 64
         A = BandedTridiag(N)
         for i = 1:N
-            set_band!(A, i, Float64(i))
-            set_diag!(A, i, Float64(i^2))
-            set_updiag!(A, i, Float64(i^3))
-            set_lodiag!(A, i, Float64(i^4))
+            set_first_row!(A, i, Float64(i))
+            set_main_diag!(A, i, Float64(i^2))
+            set_upper_diag!(A, i, Float64(i^3))
+            set_lower_diag!(A, i, Float64(i^4))
         end
         for i = 1:N
-            @test band(A, i) == i
-            @test diag(A, i) == i^2
-            @test (updiag(A, i) == i^3 || updiag(A, i) == i + 1) # because of overlap between band and upper
-            @test lodiag(A, i) == i^4
+            @test first_row(A, i) == i
+            @test main_diag(A, i) == i^2
+            @test (upper_diag(A, i) == i^3 || upper_diag(A, i) == i + 1) # because of overlap between band and upper
+            @test lower_diag(A, i) == i^4
         end
 
 
         for out_of_bounds in [-100, -1, N + 1]
-            @test_throws BoundsError set_band!(A, out_of_bounds, 0.0)
-            @test_throws BoundsError set_diag!(A, out_of_bounds, 0.0)
-            @test_throws BoundsError set_lodiag!(A, out_of_bounds, 0.0)
-            @test_throws BoundsError set_updiag!(A, out_of_bounds, 0.0)
-            @test_throws BoundsError band(A, out_of_bounds)
-            @test_throws BoundsError diag(A, out_of_bounds)
-            @test_throws BoundsError lodiag(A, out_of_bounds)
-            @test_throws BoundsError updiag(A, out_of_bounds)
+            @test_throws BoundsError set_first_row!(A, out_of_bounds, 0.0)
+            @test_throws BoundsError set_main_diag!(A, out_of_bounds, 0.0)
+            @test_throws BoundsError set_lower_diag!(A, out_of_bounds, 0.0)
+            @test_throws BoundsError set_upper_diag!(A, out_of_bounds, 0.0)
+            @test_throws BoundsError first_row(A, out_of_bounds)
+            @test_throws BoundsError main_diag(A, out_of_bounds)
+            @test_throws BoundsError lower_diag(A, out_of_bounds)
+            @test_throws BoundsError upper_diag(A, out_of_bounds)
         end
 
         for bad_type in [-100.1, 1 / 4, true, "str", 1.11]
-            @test_throws MethodError set_band!(A, bad_type, 0.0)
-            @test_throws MethodError set_diag!(A, bad_type, 0.0)
-            @test_throws MethodError set_lodiag!(A, bad_type, 0.0)
-            @test_throws MethodError set_updiag!(A, bad_type, 0.0)
-            @test_throws MethodError band(A, bad_type)
-            @test_throws MethodError diag(A, bad_type)
-            @test_throws MethodError lodiag(A, bad_type)
-            @test_throws MethodError updiag(A, bad_type)
+            @test_throws MethodError set_first_row!(A, bad_type, 0.0)
+            @test_throws MethodError set_main_diag!(A, bad_type, 0.0)
+            @test_throws MethodError set_lower_diag!(A, bad_type, 0.0)
+            @test_throws MethodError set_upper_diag!(A, bad_type, 0.0)
+            @test_throws MethodError first_row(A, bad_type)
+            @test_throws MethodError main_diag(A, bad_type)
+            @test_throws MethodError lower_diag(A, bad_type)
+            @test_throws MethodError upper_diag(A, bad_type)
         end
 
         # direct indexing 
         for i = 2:N-1 # all should be valid, edge cases handled below
-            @test A[i, i] == diag(A, i)
-            @test A[i, i+1] == updiag(A, i)
-            @test A[i, i-1] == lodiag(A, i)
+            @test A[i, i] == main_diag(A, i)
+            @test A[i, i+1] == upper_diag(A, i)
+            @test A[i, i-1] == lower_diag(A, i)
         end
 
-        @test A[2, 1] == lodiag(A, 2)
-        @test A[N-1, N] == updiag(A, N - 1)
+        @test A[2, 1] == lower_diag(A, 2)
+        @test A[N-1, N] == upper_diag(A, N - 1)
 
         @test_throws BoundsError A[1, 0]
         @test_throws BoundsError A[N, N+1]

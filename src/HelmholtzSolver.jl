@@ -72,11 +72,11 @@ function build_left_tridiag(v::CoeffVariables, numModes::Int, parity::Parity)::B
 
         lower_coeff, diag_coeff, upper_coeff = left_coeffs(n, v)
 
-        set_lodiag!(A, i, lower_coeff)
-        set_diag!(A, i, diag_coeff)
+        set_lower_diag!(A, i, lower_coeff)
+        set_main_diag!(A, i, diag_coeff)
 
         if upper_coeff != 0.0
-            set_updiag!(A, i, upper_coeff)
+            set_upper_diag!(A, i, upper_coeff)
         end
     end
 
@@ -98,10 +98,10 @@ function build_right_tridiag(v::CoeffVariables, numModes::Int, parity::Parity)::
 
         lower_coeff, diag_coeff, upper_coeff = right_coeffs(n, v)
 
-        set_lodiag!(B, i, lower_coeff)
-        set_diag!(B, i, diag_coeff)
+        set_lower_diag!(B, i, lower_coeff)
+        set_main_diag!(B, i, diag_coeff)
         if upper_coeff != 0.0
-            set_updiag!(B, i, upper_coeff)
+            set_upper_diag!(B, i, upper_coeff)
         end
     end
 

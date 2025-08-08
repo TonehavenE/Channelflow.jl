@@ -21,7 +21,7 @@ export FieldState, Physical, Spectral, BC, Diri, Neumann, Parity, Even, Odd, Nor
 using .BandedTridiags
 
 export BandedTridiag, UL_decompose!, UL_solve!, UL_solve_strided!, multiply_strided!, multiply!, multiply, multiply_strided, to_dense, extract_UL_matrices
-export set_diag!, set_band!, set_updiag!, set_lodiag!, band, updiag, lodiag, diag
+export set_main_diag!, set_first_row!, set_upper_diag!, set_lower_diag!, first_row, upper_diag, lower_diag, main_diag
 
 using .HelmholtzSolver
 export HelmholtzProblem, solve!, test_helmholtz, solve
