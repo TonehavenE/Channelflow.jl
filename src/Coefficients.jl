@@ -42,7 +42,7 @@ end
 function ChebyTransform(N::Int; flags=FFTW.ESTIMATE)
     @assert N > 0 "N must be positive"
     tmp = zeros(Float64, N)
-    cos_plan = FFTW.plan_r2r!(tmp, FFTW.REDFT00; flags=flags)
+    cos_plan = FFTW.plan_r2r(tmp, FFTW.REDFT00; flags=flags)
     ChebyTransform(N, cos_plan)
 end
 
