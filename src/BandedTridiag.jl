@@ -126,39 +126,53 @@ function Base.setindex!(A::BandedTridiag{T}, val::T, i::Int, j::Int) where {T}
     return val
 end
 
-"""UL decomposition (no pivoting) - matches C++ implementation exactly"""
+"""
+UL decomposition.
+Performs elimination from bottom-right to top-left, creating:
+- U: upper triangular factor (stored in upper diagonal and first row)
+- L: lower triangular factor with unit diagonal (multipliers stored in lower diagonal)
+"""
 function UL_decompose!(A::BandedTridiag{T}) where {T}
-    @assert A.num_rows ≥ 2
-    Mb = A.num_rows - 1
-
-    # Main decomposition loop - matches C++ exactly
-    for k = A.num_rows:-1:3  # C++: for (int k = Mb; k > 1; --k)
-        Akk = main_diag(A, k)
-        @assert Akk != 0.0 "Zero diagonal element encountered"
-
-        w = lower_diag(A, k)  # A[k, k-1]
-
-        # C++: diag(k-1) -= w * (upper_diag(k-1) /= Akk)
-        updiag_val = upper_diag(A, k - 1) / Akk
-        set_upper_diag!(A, k - 1, updiag_val)
-        set_main_diag!(A, k - 1, main_diag(A, k - 1) - w * updiag_val)
-
-        # C++: band(k-1) -= w * (band(k) /= Akk)
-        band_val = first_row(A, k) / Akk
-        set_first_row!(A, k, band_val)
-        set_first_row!(A, k - 1, first_row(A, k - 1) - w * band_val)
+    @assert A.num_rows ≥ 2 "Matrix must have at least 2 rows"
+    
+    # Main elimination loop: eliminate from bottom to top
+    for k = A.num_rows:-1:3
+        pivot = main_diag(A, k)
+        @assert !iszero(pivot) "Zero pivot encountered at position ($k,$k)"
+        
+        # Get the lower diagonal element to eliminate
+        multiplier = lower_diag(A, k)  # This becomes part of L
+        
+        # Update upper diagonal: U[k-1,k] = U[k-1,k] / U[k,k]
+        upper_val = upper_diag(A, k-1) / pivot
+        set_upper_diag!(A, k-1, upper_val)
+        
+        # Update main diagonal: U[k-1,k-1] -= L[k,k-1] * U[k-1,k]
+        new_diag = main_diag(A, k-1) - multiplier * upper_val
+        set_main_diag!(A, k-1, new_diag)
+        
+        # Update band elements: similar elimination for first row
+        first_row_val = first_row(A, k) / pivot
+        set_first_row!(A, k, first_row_val)
+        
+        new_first_row_val = first_row(A, k-1) - multiplier * first_row_val
+        set_first_row!(A, k-1, new_first_row_val)
     end
-
-    # Handle first row - C++: band(0) -= lodiag(1) * (band(1) /= diag(1))
-    band_1_val = first_row(A, 2) / main_diag(A, 2)  # band(1) in C++ is band(2) in Julia
-    set_first_row!(A, 2, band_1_val)
-    set_first_row!(A, 1, first_row(A, 1) - lower_diag(A, 2) * band_1_val)
-
-    # Compute inverse diagonal elements
-    for i = 1:A.num_rows
-        A.inv_diag[i] = 1.0 / main_diag(A, i)
-    end
-
+    
+    # Handle the boundary case between first row and second row
+    pivot = main_diag(A, 2)
+    @assert !iszero(pivot) "Zero pivot encountered at position (2,2)"
+    
+    multiplier = lower_diag(A, 2)
+    first_row_normalized = first_row(A, 2) / pivot
+    set_first_row!(A, 2, first_row_normalized)
+    
+    new_first_row = first_row(A, 1) - multiplier * first_row_normalized
+    set_first_row!(A, 1, new_first_row)
+    
+    # Precompute inverse diagonal elements for efficient solving
+    A.inv_diag .= inv.(main_diag(A, i) for i = 1:A.num_rows)
+    
     A.is_decomposed = true
     return A
 end
