@@ -48,7 +48,7 @@ Base.size(A::BandedTridiag) = (A.M, A.M)
 # Accessor methods matching C++ interface
 """Get/set band element A[0,j] (first row)"""
 function band(A::BandedTridiag, j::Int)
-    @boundscheck (1 ≤ j ≤ A.M) || throw(BoundsError(A, (0, j)))
+    @boundscheck (1 ≤ j ≤ A.M) || throw(BoundsError(A, (1, j)))
     A.data[A.Mbar-j+2]  # Convert to 1-based indexing
 end
 
