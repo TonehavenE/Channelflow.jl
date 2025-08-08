@@ -400,7 +400,7 @@ Compute derivative of Chebyshev expansion.
 
 See "docs/Derivatives.md".
 """
-function diff(u::ChebyCoeff{T}) where {T<:Number}
+function derivative(u::ChebyCoeff{T}) where {T<:Number}
     @assert u.state == Spectral "Must be in Spectral (Chebyshev coefficient) state."
 
     N = length(u.data)
@@ -432,16 +432,16 @@ function diff(u::ChebyCoeff{T}) where {T<:Number}
 end
 
 """Compute second derivative"""
-function diff2(u::ChebyCoeff{T}) where {T<:Number}
-    return diff(diff(u))
+function derivative2(u::ChebyCoeff{T}) where {T<:Number}
+    return derivative(derivative(u))
 end
 
 """Compute n-th derivative"""
-function diff(u::ChebyCoeff{T}, n::Int) where {T<:Number}
+function derivative(u::ChebyCoeff{T}, n::Int) where {T<:Number}
     @assert n >= 0 "Derivative order must be non-negative"
     result = u
     for _ in 1:n
-        result = diff(result)
+        result = derivative(result)
     end
     return result
 end
