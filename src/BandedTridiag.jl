@@ -374,4 +374,15 @@ function extract_UL_matrices(A::BandedTridiag{T}) where {T}
 
     return U, L
 end
+"""
+Convert BandedTridiag to a full dense matrix for testing
+"""
+function to_dense(A::BandedTridiag{T}) where {T}
+    M = A.M
+    dense = zeros(T, M, M)
+    for i = 1:M, j = 1:M
+        dense[i, j] = A[i, j]
+    end
+    return dense
+end
 end
