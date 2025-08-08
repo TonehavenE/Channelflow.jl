@@ -3,6 +3,7 @@ module Channelflow
 include("Coefficients.jl")
 include("BandedTridiag.jl")
 include("HelmholtzSolver.jl")
+include("FlowField/FlowField.jl")
 
 using .ChebyCoeffs
 
@@ -25,5 +26,7 @@ export set_main_diag!, set_first_row!, set_upper_diag!, set_lower_diag!, first_r
 
 using .HelmholtzSolver
 export HelmholtzProblem, solve!, test_helmholtz, solve
+
+using .FlowFields
 
 end
