@@ -5,10 +5,13 @@ using FFTW
 export ChebyTransform, ChebyCoeff
 export makeSpectral!, makePhysical!, makeState!, setToZero!, setState!
 export chebyfft!, ichebyfft!
-export L2Norm2, L2Norm, L2InnerProduct, LinfNorm, L1Norm, mean_value, evaluate
+export L2Norm2, L2Norm, L2InnerProduct, LinfNorm, L1Norm, mean_value
+export evaluate, eval_a, eval_b, slope_a, slope_b
+export bounds, domain_length, num_modes, state
 export chebyNorm2, chebyInnerProduct, chebyNorm
 export chebypoints
 export legendre_polynomial, chebyshev_polynomial
+export integrate, derivative, derivative2
 export FieldState, Physical, Spectral, BC, Diri, Neumann, Parity, Even, Odd, NormType, Uniform, Cheby
 
 @enum FieldState begin
