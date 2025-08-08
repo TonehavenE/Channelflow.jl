@@ -3,7 +3,7 @@ module BandedTridiags
 using ..ChebyCoeffs
 using Printf
 
-export BandedTridiag, UL_decompose!, UL_solve!, UL_solve_strided!, multiply_strided!, multiply!
+export BandedTridiag, UL_decompose!, UL_solve!, UL_solve_strided!, multiply_strided!, multiply!, multiply, multiply_strided, extract_UL_matrices, to_dense
 export set_diag!, set_band!, set_updiag!, set_lodiag!, band, updiag, lodiag, diag
 
 """
@@ -303,6 +303,21 @@ function multiply_strided!(x::ChebyCoeff{T}, A::BandedTridiag{T},
     multiply_strided!(x.data, A, b.data, offset, stride)
 end
 
+function multiply_strided(x::AbstractVector{T}, A::BandedTridiag{T}, offset::Int, stride::Int) where {T<:Number}
+    b = zeros(T, size(x))
+    multiply_strided!(x, A, b, offset, stride)
+    return b
+end
+
+function multiply(x::AbstractVector{T}, A::BandedTridiag{T}) where {T<:Number}
+    b = zeros(T, size(x))
+    multiply!(x, A, b)
+    return b
+end
+
+function Base.:*(A::BandedTridiag{T}, x::AbstractVector{T}) where {T<:Number}
+    multiply(x, A)
+end
 # Pretty printing
 function Base.show(io::IO, A::BandedTridiag{T}) where {T}
     print(io, "$(A.M)×$(A.M) BandedTridiag{$T}")
