@@ -343,5 +343,35 @@ function Base.display(A::BandedTridiag)
         println("  (UL-decomposed)")
     end
 end
+"""
+Extract U and L matrices from UL-decomposed BandedTridiag
+"""
+function extract_UL_matrices(A::BandedTridiag{T}) where {T}
+    @assert A.is_decomposed "Matrix must be UL-decomposed"
+    M = A.M
+    U = zeros(T, M, M)
+    L = zeros(T, M, M)
 
+    # In UL decomposition, typically:
+    # - U is upper triangular with 1's on diagonal
+    # - L is lower triangular 
+    # - The decomposed matrix stores L below diagonal, U above diagonal
+
+    # Extract U matrix (upper triangular with 1's on diagonal)
+    for i = 1:M
+        U[i, i] = one(T)  # 1's on diagonal
+        for j = i+1:M
+            U[i, j] = A[i, j]  # Upper triangular part
+        end
+    end
+
+    # Extract L matrix (lower triangular including diagonal)
+    for i = 1:M
+        for j = 1:i
+            L[i, j] = A[i, j]  # Lower triangular part including diagonal
+        end
+    end
+
+    return U, L
+end
 end
