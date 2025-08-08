@@ -55,43 +55,48 @@ function set_first_row!(A::BandedTridiag{T}, j::Int, val::T) where {T}
     A.is_decomposed = false
 end
 
-"""Get/set diagonal element A[i,i]"""
+"""Get diagonal element A[i,i]"""
 function main_diag(A::BandedTridiag, i::Int)
     @boundscheck (1 ≤ i ≤ A.num_rows) || throw(BoundsError(A, (i, i)))
     A.data[A.d_offset+3*(i-1)]
 end
 
+"""Set diagonal element A[i,i]"""
 function set_main_diag!(A::BandedTridiag{T}, i::Int, val::T) where {T}
     @boundscheck (1 ≤ i ≤ A.num_rows) || throw(BoundsError(A, (i, i)))
     A.data[A.d_offset+3*(i-1)] = val
     A.is_decomposed = false
 end
 
-"""Get/set upper diagonal element A[i,i+1]"""
+"""Get upper diagonal element A[i,i+1]"""
 function upper_diag(A::BandedTridiag, i::Int)
     @boundscheck (1 ≤ i ≤ A.num_rows) || throw(BoundsError(A, (i, i + 1)))
     A.data[A.d_offset+3*(i-1)-1]
 end
 
+"""Set upper diagonal element A[i,i+1]"""
 function set_upper_diag!(A::BandedTridiag{T}, i::Int, val::T) where {T}
     @boundscheck (1 ≤ i ≤ A.num_rows) || throw(BoundsError(A, (i, i + 1)))
     A.data[A.d_offset+3*(i-1)-1] = val
     A.is_decomposed = false
 end
 
-"""Get/set lower diagonal element A[i,i-1]"""
+"""Get lower diagonal element A[i,i-1]"""
 function lower_diag(A::BandedTridiag, i::Int)
     @boundscheck (1 ≤ i ≤ A.num_rows) || throw(BoundsError(A, (i, i - 1)))
     A.data[A.d_offset+3*(i-1)+1]
 end
 
+"""Set lower diagonal element A[i,i-1]"""
 function set_lower_diag!(A::BandedTridiag{T}, i::Int, val::T) where {T}
     @boundscheck (1 ≤ i ≤ A.num_rows) || throw(BoundsError(A, (i, i - 1)))
     A.data[A.d_offset+3*(i-1)+1] = val
     A.is_decomposed = false
 end
 
-# Matrix interface using 1-based indexing
+"""
+Matrix interface for accessing elements as A[row, col]
+"""
 function Base.getindex(A::BandedTridiag, i::Int, j::Int)
     @boundscheck (1 ≤ i ≤ A.num_rows && 1 ≤ j ≤ A.num_rows) || throw(BoundsError(A, (i, j)))
 
@@ -108,6 +113,9 @@ function Base.getindex(A::BandedTridiag, i::Int, j::Int)
     end
 end
 
+"""
+Matrix interface for setting elements as A[row, col] = val
+"""
 function Base.setindex!(A::BandedTridiag{T}, val::T, i::Int, j::Int) where {T}
     @boundscheck (1 ≤ i ≤ A.num_rows && 1 ≤ j ≤ A.num_rows) || throw(BoundsError(A, (i, j)))
 
@@ -177,7 +185,7 @@ function UL_decompose!(A::BandedTridiag{T}) where {T}
     return A
 end
 
-"""UL solve with strided access - matches C++ implementation exactly"""
+"""UL solve with strided access. Modifies b in place."""
 function UL_solve_strided!(A::BandedTridiag{T}, b::AbstractVector{T},
     offset::Int, stride::Int) where {T<:Number}
     @assert A.is_decomposed "Matrix must be UL-decomposed first"
