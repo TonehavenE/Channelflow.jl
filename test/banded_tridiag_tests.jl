@@ -2,7 +2,7 @@ using Test
 using Channelflow
 using LinearAlgebra
 
-@testset verbose = true "BandedTridiag tests" begin
+@testset "BandedTridiag tests" begin
     N = 8
 
     # test constructors 
