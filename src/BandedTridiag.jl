@@ -131,6 +131,7 @@ end
 
 """UL decomposition (no pivoting) - matches C++ implementation exactly"""
 function UL_decompose!(A::BandedTridiag{T}) where {T}
+    @assert A.M ≥ 2
     Mb = A.M - 1
 
     # Main decomposition loop - matches C++ exactly
