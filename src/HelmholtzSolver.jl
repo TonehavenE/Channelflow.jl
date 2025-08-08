@@ -13,7 +13,7 @@ using ..ChebyCoeffs
 using ..BandedTridiags
 using Printf
 
-export HelmholtzProblem, solve!, test_helmholtz
+export HelmholtzProblem, solve!, test_helmholtz, solve
 
 struct CoeffVariables
     lambda::Real
@@ -193,6 +193,13 @@ function solve!(h::HelmholtzProblem, u::ChebyCoeff, f::ChebyCoeff, ua::Real, ub:
     return u
 end
 
+function solve(h::HelmholtzProblem, f::ChebyCoeff, ua::Real, ub::Real)
+    u = ChebyCoeff(h.number_modes, h.a, h.b, Physical)
+    solve!(h, u, f, ua, ub)
+    return u
+end
+
+
 """
 Extended solver that handles both forcing and mean constraint.
 
@@ -226,6 +233,12 @@ function solve!(h::HelmholtzProblem, u::ChebyCoeff, f::ChebyCoeff, umean::Real, 
     rhs_temp[1] += mu         # Add mean correction
     solve!(h, u, rhs_temp, ua, ub)
 
+    return u
+end
+
+function solve(h::HelmholtzProblem, f::ChebyCoeff, umean::Real, ua::Real, ub::Real)
+    u = ChebyCoeff(h.number_modes, h.a, h.b, Physical)
+    solve!(h, u, f, umean, ua, ub)
     return u
 end
 
