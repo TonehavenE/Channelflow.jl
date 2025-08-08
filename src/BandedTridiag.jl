@@ -31,7 +31,7 @@ function BandedTridiag{T}(M::Int) where {T<:Number}
     @assert M >= 0 "Matrix size must be non-negative"
     data_size = max(4 * M - 2, 0)  # matches C++ allocation, handle M=0 case
     data = zeros(T, data_size)
-    d_offset = Mbar + 1    # Julia 1-based indexing adjustment
+    d_offset = M
     invdiag = zeros(T, M)
 
     BandedTridiag{T}(M, data, d_offset, invdiag, false)
