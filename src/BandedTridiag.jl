@@ -225,7 +225,6 @@ function UL_solve_strided!(A::BandedTridiag{T}, b::AbstractVector{T},
         end
         b[1] /= diag(A, 1)
         for i = 2:A.M
-            # @info "i=$i, invdiag=$(A.invdiag[i]), lodiag=$(lodiag(A, i)), b[i-1]=$(b[stride*(i - 1) - 1])"
             b[stride*i-1] = (b[stride*i-1] - lodiag(A, i) * b[stride*(i-1)-1]) * A.invdiag[i]
         end
 
@@ -271,7 +270,6 @@ function multiply_strided!(x::AbstractVector{T}, A::BandedTridiag{T},
 
     offset_1based = offset + 1
     Mbar = A.M - 1
-    # @info "Mbar = $Mbar"
 
     # Row 0 (first row) - full band multiplication
     sum_val = zero(T)
@@ -292,9 +290,6 @@ function multiply_strided!(x::AbstractVector{T}, A::BandedTridiag{T},
     b[offset_1based+stride*(A.M-1)] =
         lodiag(A, A.M) * x[offset_1based+stride*(A.M-2)] +
         diag(A, A.M) * x[offset_1based+stride*(A.M-1)]
-    @info "offset_1based = $offset_1based, stride = $stride, A.M-1 = $(A.M - 1), total: $(offset_1based + stride * (A.M - 1))"
-    @info "lodiag(A, A.M) = $(lodiag(A, A.M)), x[offset+stride] = $(x[offset_1based+stride*(A.M-2)]), diag(A, A.M) = $(diag(A, A.M)), and x[offset + stride(A.M - 1)] =  $(x[offset_1based+stride*(A.M-1)])"
-    @info "so total: $(lodiag(A, A.M) * x[offset_1based+stride*(A.M-2)] + diag(A, A.M) * x[offset_1based+stride*(A.M-1)])"
 
     return b
 end
@@ -322,9 +317,9 @@ function Base.display(A::BandedTridiag)
         print("  ")
         for j = 1:A.M
             if abs(i - j) ≤ 1 || i == 1
-                @printf "%f " A[i, j]
+                @printf "%8.3f " A[i, j]
             else
-                print(" 0 ")
+                print("   0.000 ")
             end
         end
         println()
