@@ -2,15 +2,14 @@
 Defines norms and inner product functions for Chebyshev coefficient expansions.
 =#
 
-export L2Norm,
-    L2Norm2, L2InnerProduct, chebyNorm, chebyNorm2, chebyInnerProduct, LinfNorm, L1Norm
+using ..ChebyCoeffs
 
 # ============================================================================
 # Norm and Inner Product Functions - unified for real and complex
 # ============================================================================
 
 """L2 norm squared"""
-function L2Norm2(u::ChebyCoeff{T}, normalize::Bool = true) where {T<:Number}
+function L2Norm2(u::ChebyCoeff{T}, normalize::Bool=true) where {T<:Number}
     @assert u.state == Spectral "Must be in Spectral state"
     N = length(u.data)
     sum_val = zero(real(T))
@@ -38,13 +37,13 @@ function L2Norm2(u::ChebyCoeff{T}, normalize::Bool = true) where {T<:Number}
     return normalize ? sum_val : sum_val * domain_length(u)
 end
 
-L2Norm(u::ChebyCoeff{T}, normalize::Bool = true) where {T<:Number} =
+L2Norm(u::ChebyCoeff{T}, normalize::Bool=true) where {T<:Number} =
     sqrt(L2Norm2(u, normalize))
 
 function L2InnerProduct(
     u::ChebyCoeff{T},
     v::ChebyCoeff{S},
-    normalize::Bool = true,
+    normalize::Bool=true,
 ) where {T<:Number,S<:Number}
     @assert congruent_structure(u, v) "Arguments must have compatible structure"
     @assert u.state == Spectral "Must be in Spectral state"
@@ -77,7 +76,7 @@ function L2InnerProduct(
 end
 
 """Chebyshev norm squared (coefficient-based)"""
-function chebyNorm2(u::ChebyCoeff{T}, normalize::Bool = true) where {T<:Number}
+function chebyNorm2(u::ChebyCoeff{T}, normalize::Bool=true) where {T<:Number}
     @assert u.state == Spectral "Must be in Spectral state"
     N = length(u.data)
     sum_val = zero(real(T))
@@ -105,13 +104,13 @@ function chebyNorm2(u::ChebyCoeff{T}, normalize::Bool = true) where {T<:Number}
     return sum_val * π / 2
 end
 
-chebyNorm(u::ChebyCoeff{T}, normalize::Bool = true) where {T<:Number} =
+chebyNorm(u::ChebyCoeff{T}, normalize::Bool=true) where {T<:Number} =
     sqrt(chebyNorm2(u, normalize))
 
 function chebyInnerProduct(
     u::ChebyCoeff{T},
     v::ChebyCoeff{S},
-    normalize::Bool = true,
+    normalize::Bool=true,
 ) where {T<:Number,S<:Number}
     @assert congruent_structure(u, v) "Arguments must have compatible structure"
     @assert u.state == Spectral "Must be in Spectral state"
@@ -159,7 +158,7 @@ function LinfNorm(u::ChebyCoeff{T}) where {T<:Number}
 end
 
 """L1 norm (integral of absolute value)"""
-function L1Norm(u::ChebyCoeff{T}, normalize::Bool = true) where {T<:Number}
+function L1Norm(u::ChebyCoeff{T}, normalize::Bool=true) where {T<:Number}
     # For complex case, this computes ∫|Re(u)| + |Im(u)| dx
     if T <: Real
         u_copy = deepcopy(u)
