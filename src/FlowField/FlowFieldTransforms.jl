@@ -178,7 +178,7 @@ function make_spectral_y!(data::Array{Complex{T},4}, domain::FlowFieldDomain{T},
     transforms::FlowFieldTransforms{T}) where {T<:Real}
 
     if domain.Ny < 2
-        return data  # Trivial case
+        return data
     end
 
     if transforms.y_plan === nothing

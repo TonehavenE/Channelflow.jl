@@ -30,13 +30,6 @@ export resize!, rescale!
 
 """
 FlowField stores 3D vector fields with Fourier x Chebyshev x Fourier spectral expansions.
-
-Key design changes from original packed storage:
-1. Separate arrays for physical and spectral data
-2. Physical data: real array [Nx, Ny, Nz, num_dimensions]
-3. Spectral data: complex array [Mx, My, Mz, num_dimensions] 
-4. Much cleaner access patterns and arithmetic operations
-5. FFTW plans are created once and reused
 """
 mutable struct FlowField{T<:Real}
     domain::FlowFieldDomain{T}
@@ -282,17 +275,17 @@ Uses FFTW transforms with proper normalization.
 """
 function make_spectral_xz!(ff::FlowField{T}) where {T}
     if ff.xz_state == Spectral
-        return ff
+        return ff # already in spectral
     end
 
-    @assert ff.physical_data !== nothing "Physical data must be allocated"
+    @assert ff.physical_data !== nothing "Physical data must be allocated to convert to spectral"
 
     # Allocate spectral data if needed
     if ff.spectral_data === nothing
         ff.spectral_data = zeros(Complex{T}, ff.domain.Mx, ff.domain.My, ff.domain.Mz, ff.domain.num_dimensions)
     end
 
-    make_spectral_xz!(ff.physical_data, ff.spectral_data, ff.domain, ff.transforms)
+    make_spectral_xz!(ff.physical_data, ff.spectral_data, ff.domain, ff.transforms) # delegates to FlowFieldTransforms.jl
     ff.xz_state = Spectral
 
     return ff
@@ -306,10 +299,10 @@ Uses inverse FFTW transforms.
 """
 function make_physical_xz!(ff::FlowField{T}) where {T}
     if ff.xz_state == Physical
-        return ff
+        return ff # already in physical
     end
 
-    @assert ff.spectral_data !== nothing "Spectral data must be allocated"
+    @assert ff.spectral_data !== nothing "Spectral data must be allocated to convert to physical"
 
     # Allocate physical data if needed
     if ff.physical_data === nothing
@@ -330,7 +323,7 @@ Uses DCT-I with proper Chebyshev normalization.
 """
 function make_spectral_y!(ff::FlowField{T}) where {T}
     if ff.y_state == Spectral
-        return ff
+        return ff # already in spectral
     end
 
     _ensure_data_allocated!(ff)
@@ -349,7 +342,7 @@ Uses inverse DCT-I with proper normalization.
 """
 function make_physical_y!(ff::FlowField{T}) where {T}
     if ff.y_state == Physical
-        return ff
+        return ff # already in physical
     end
 
     _ensure_data_allocated!(ff)
@@ -603,8 +596,6 @@ function swap!(ff1::FlowField{T}, ff2::FlowField{T}) where {T}
     ff1.xz_state, ff2.xz_state = ff2.xz_state, ff1.xz_state
     ff1.y_state, ff2.y_state = ff2.y_state, ff1.y_state
     ff1.padded, ff2.padded = ff2.padded, ff1.padded
-
-    return nothing
 end
 
 """
@@ -634,7 +625,6 @@ function zero_padded_modes!(ff::FlowField)
     end
 
     ff.padded = true
-    return ff
 end
 
 # ===========================
