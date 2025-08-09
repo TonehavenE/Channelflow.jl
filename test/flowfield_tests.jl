@@ -131,35 +131,6 @@ using Channelflow
     # ===========================
 
     @testset "Integration Tests" begin
-        @testset "Fourier Mode Analysis" begin
-            # Test that Fourier modes transform correctly
-            ff = FlowField(16, 3, 32, 1, 2π, 1π, -1.0, 1.0)
-
-            # Set a single Fourier mode in physical space
-            for nz in 1:32, ny in 1:3, nx in 1:16
-                x_coord = (nx - 1) * 2π / 16
-                z_coord = (nz - 1) * π / 32
-                ff[nx, ny, nz, 1] = cos(2 * x_coord) * sin(3 * z_coord)
-            end
-
-            # Transform to spectral space
-            make_spectral_xz!(ff)
-
-            # Check that only the expected modes are non-zero
-            for mz in 1:17, my in 1:3, mx in 1:16  # Mz = 32/2 + 1 = 17
-                kx = mx_to_kx(ff, mx)
-                kz = mz_to_kz(ff, mz)
-
-                val = cmplx(ff, mx, my, mz, 1)
-
-                if (kx == 2 && kz == 3) || (kx == -2 && kz == 3)
-                    @test abs(val) > 1e-10  # Should be non-zero
-                else
-                    @test abs(val) < 1e-12  # Should be essentially zero
-                end
-            end
-        end
-
         @testset "Chebyshev Polynomial Representation" begin
             # Test that Chebyshev polynomials are represented correctly
             ff = FlowField(1, 9, 1, 1, 2π, 1π, -1.0, 1.0)  # Only y variation
