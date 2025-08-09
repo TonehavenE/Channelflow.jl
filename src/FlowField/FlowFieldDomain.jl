@@ -10,6 +10,7 @@ export FlowFieldDomain, x_coord, y_coord, z_coord,
     kx_range, kz_range, kx_to_mx, mx_to_kx,
     kz_to_mz, mz_to_kz, kx_max_dealiased,
     kz_max_dealiased, is_aliased,
+    total_gridpoints, total_modes, domain_volume,
     geom_congruent, congruent
 
 """
