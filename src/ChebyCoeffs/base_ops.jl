@@ -3,14 +3,10 @@ Basic arithmetic and manipulation operations for ChebyCoeff type.
 Must be included after types_and_constructors.jl.
 =#
 
-export bounds, domain_length, num_modes, state,
-    setBounds!, setState!, setToZero!
+export bounds, domain_length, num_modes, state, setBounds!, setState!, setToZero!
 
 function congruent_structure(u::ChebyCoeff, v::ChebyCoeff)
-    return (length(u) == length(v) &&
-            u.a == v.a &&
-            u.b == v.b &&
-            u.state == v.state)
+    return (length(u) == length(v) && u.a == v.a && u.b == v.b && u.state == v.state)
 end
 
 function congruent(u::ChebyCoeff{T}, v::ChebyCoeff{S}) where {T<:Number,S<:Number}
@@ -87,11 +83,15 @@ Base.:(==)(u::ChebyCoeff, v::ChebyCoeff) = congruent_structure(u, v) && u.data =
 
 # Complex conjugation
 Base.conj(u::ChebyCoeff{T}) where {T<:Real} = u  # Real case: no change
-Base.conj(u::ChebyCoeff{T}) where {T<:Complex} = ChebyCoeff{T}(conj.(u.data), u.a, u.b, u.state)
+Base.conj(u::ChebyCoeff{T}) where {T<:Complex} =
+    ChebyCoeff{T}(conj.(u.data), u.a, u.b, u.state)
 
 # Real and imaginary parts
 Base.real(u::ChebyCoeff{T}) where {T<:Real} = u
-Base.real(u::ChebyCoeff{T}) where {T<:Complex} = ChebyCoeff{real(T)}(real.(u.data), u.a, u.b, u.state)
+Base.real(u::ChebyCoeff{T}) where {T<:Complex} =
+    ChebyCoeff{real(T)}(real.(u.data), u.a, u.b, u.state)
 
-Base.imag(u::ChebyCoeff{T}) where {T<:Real} = ChebyCoeff{T}(zeros(T, length(u.data)), u.a, u.b, u.state)
-Base.imag(u::ChebyCoeff{T}) where {T<:Complex} = ChebyCoeff{real(T)}(imag.(u.data), u.a, u.b, u.state)
+Base.imag(u::ChebyCoeff{T}) where {T<:Real} =
+    ChebyCoeff{T}(zeros(T, length(u.data)), u.a, u.b, u.state)
+Base.imag(u::ChebyCoeff{T}) where {T<:Complex} =
+    ChebyCoeff{real(T)}(imag.(u.data), u.a, u.b, u.state)

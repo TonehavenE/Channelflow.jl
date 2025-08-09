@@ -23,7 +23,7 @@ using Channelflow
         end
 
         @testset "Constructor with Spectral State" begin
-            ff = FlowField(8, 5, 16, 3, 2π, 1π, -1.0, 1.0; xz_state=Spectral)
+            ff = FlowField(8, 5, 16, 3, 2π, 1π, -1.0, 1.0; xz_state = Spectral)
 
             @test ff.xz_state == Spectral
             @test ff.y_state == Physical
@@ -136,7 +136,7 @@ using Channelflow
             ff = FlowField(1, 9, 1, 1, 2π, 1π, -1.0, 1.0)  # Only y variation
 
             # Set to T_4(y) = 8y^4 - 8y^2 + 1 (4th Chebyshev polynomial)
-            for ny in 1:9
+            for ny = 1:9
                 y_val = y_coord(ff.domain, ny)
                 ff[1, ny, 1, 1] = 8 * y_val^4 - 8 * y_val^2 + 1
             end
@@ -145,7 +145,7 @@ using Channelflow
             make_spectral_y!(ff)
 
             # In spectral space, only the 4th mode should be non-zero
-            for ny in 1:9
+            for ny = 1:9
                 val = ff.physical_data[1, ny, 1, 1]  # Still stored in physical_data after y transform
                 if ny == 5  # 5th coefficient corresponds to T_4
                     @test abs(val) > 1e-10
@@ -161,7 +161,7 @@ using Channelflow
             ff2 = FlowField(8, 5, 16, 2, 2π, 1π, -1.0, 1.0)
 
             # Set same data in both
-            for i in 1:2, nz in 1:16, ny in 1:5, nx in 1:8
+            for i = 1:2, nz = 1:16, ny = 1:5, nx = 1:8
                 val = sin(π * (nx - 1) / 8) * cos(π * (nz - 1) / 16) * (ny + i)
                 ff1[nx, ny, nz, i] = val
                 ff2[nx, ny, nz, i] = val

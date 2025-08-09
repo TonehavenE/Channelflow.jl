@@ -3,8 +3,24 @@ module BandedTridiags
 using ..ChebyCoeffs
 using Printf
 
-export BandedTridiag, UL_decompose!, UL_solve!, UL_solve_strided!, multiply_strided!, multiply!, multiply, multiply_strided, extract_UL_matrices, to_dense
-export set_main_diag!, set_first_row!, set_upper_diag!, set_lower_diag!, first_row, upper_diag, lower_diag, main_diag
+export BandedTridiag,
+    UL_decompose!,
+    UL_solve!,
+    UL_solve_strided!,
+    multiply_strided!,
+    multiply!,
+    multiply,
+    multiply_strided,
+    extract_UL_matrices,
+    to_dense
+export set_main_diag!,
+    set_first_row!,
+    set_upper_diag!,
+    set_lower_diag!,
+    first_row,
+    upper_diag,
+    lower_diag,
+    main_diag
 
 """
 A banded tridiagonal matrix with the structure:
@@ -128,7 +144,8 @@ function Base.setindex!(A::BandedTridiag{T}, val::T, i::Int, j::Int) where {T}
     elseif i == j - 1
         set_upper_diag!(A, i, val)
     else
-        abs(i - j) ≤ 1 || throw(ArgumentError("Cannot set element ($i,$j) outside the band structure"))
+        abs(i - j) ≤ 1 ||
+            throw(ArgumentError("Cannot set element ($i,$j) outside the band structure"))
     end
 
     return val
@@ -142,56 +159,60 @@ Performs elimination from bottom-right to top-left, creating:
 """
 function UL_decompose!(A::BandedTridiag{T}) where {T}
     @assert A.num_rows ≥ 2 "Matrix must have at least 2 rows"
-    
+
     # Main elimination loop: eliminate from bottom to top
     for k = A.num_rows:-1:3
         pivot = main_diag(A, k)
         @assert !iszero(pivot) "Zero pivot encountered at position ($k,$k)"
-        
+
         # Get the lower diagonal element to eliminate
         multiplier = lower_diag(A, k)  # This becomes part of L
-        
+
         # Update upper diagonal: U[k-1,k] = U[k-1,k] / U[k,k]
-        upper_val = upper_diag(A, k-1) / pivot
-        set_upper_diag!(A, k-1, upper_val)
-        
+        upper_val = upper_diag(A, k - 1) / pivot
+        set_upper_diag!(A, k - 1, upper_val)
+
         # Update main diagonal: U[k-1,k-1] -= L[k,k-1] * U[k-1,k]
-        new_diag = main_diag(A, k-1) - multiplier * upper_val
-        set_main_diag!(A, k-1, new_diag)
-        
+        new_diag = main_diag(A, k - 1) - multiplier * upper_val
+        set_main_diag!(A, k - 1, new_diag)
+
         # Update band elements: similar elimination for first row
         first_row_val = first_row(A, k) / pivot
         set_first_row!(A, k, first_row_val)
-        
-        new_first_row_val = first_row(A, k-1) - multiplier * first_row_val
-        set_first_row!(A, k-1, new_first_row_val)
+
+        new_first_row_val = first_row(A, k - 1) - multiplier * first_row_val
+        set_first_row!(A, k - 1, new_first_row_val)
     end
-    
+
     # Handle the boundary case between first row and second row
     pivot = main_diag(A, 2)
     @assert !iszero(pivot) "Zero pivot encountered at position (2,2)"
-    
+
     multiplier = lower_diag(A, 2)
     first_row_normalized = first_row(A, 2) / pivot
     set_first_row!(A, 2, first_row_normalized)
-    
+
     new_first_row = first_row(A, 1) - multiplier * first_row_normalized
     set_first_row!(A, 1, new_first_row)
-    
+
     # Precompute inverse diagonal elements for efficient solving
     A.inv_diag .= inv.(main_diag(A, i) for i = 1:A.num_rows)
-    
+
     A.is_decomposed = true
     return A
 end
 
 """UL solve with strided access. Modifies b in place."""
-function UL_solve_strided!(A::BandedTridiag{T}, b::AbstractVector{T},
-    offset::Int, stride::Int) where {T<:Number}
+function UL_solve_strided!(
+    A::BandedTridiag{T},
+    b::AbstractVector{T},
+    offset::Int,
+    stride::Int,
+) where {T<:Number}
     @assert A.is_decomposed "Matrix must be UL-decomposed first"
     @assert offset in [0, 1] "offset must be 0 or 1"
     @assert stride in [1, 2] "stride must be 1 or 2"
-        
+
     # Define index mapping function based on offset and stride
     idx = if offset == 0 && stride == 1
         i -> i
@@ -204,12 +225,12 @@ function UL_solve_strided!(A::BandedTridiag{T}, b::AbstractVector{T},
     else
         error("Invalid offset/stride combination")
     end
-    
+
     # Solve Uy=b by backsubstitution
-    for i = (A.num_rows - 1):-1:2
-        b[idx(i)] -= upper_diag(A, i) * b[idx(i+1)]
+    for i = (A.num_rows-1):-1:2
+        b[idx(i)] -= upper_diag(A, i) * b[idx(i + 1)]
     end
-    
+
     # Handle first row
     for j = 2:A.num_rows
         first_row_idx = if offset == 1 && stride == 1
@@ -219,13 +240,13 @@ function UL_solve_strided!(A::BandedTridiag{T}, b::AbstractVector{T},
         end
         b[idx(1)] -= first_row(A, j) * b[first_row_idx]
     end
-    
+
     # Solve Lx=y by forward substitution
     b[idx(1)] /= main_diag(A, 1)
     for i = 2:A.num_rows
-        b[idx(i)] = (b[idx(i)] - lower_diag(A, i) * b[idx(i-1)]) * A.inv_diag[i]
+        b[idx(i)] = (b[idx(i)] - lower_diag(A, i) * b[idx(i - 1)]) * A.inv_diag[i]
     end
-    
+
     return b
 end
 
@@ -238,51 +259,75 @@ function UL_solve!(A::BandedTridiag{T}, b::ChebyCoeff{T}) where {T<:Number}
     UL_solve!(A, b.data)
 end
 
-function UL_solve_strided!(A::BandedTridiag{T}, b::ChebyCoeff{T},
-    offset::Int, stride::Int) where {T<:Number}
+function UL_solve_strided!(
+    A::BandedTridiag{T},
+    b::ChebyCoeff{T},
+    offset::Int,
+    stride::Int,
+) where {T<:Number}
     UL_solve_strided!(A, b.data, offset, stride)
 end
 
 """Matrix-vector multiplication with strided access using Julia idioms"""
-function multiply_strided!(x::AbstractVector{T}, A::BandedTridiag{T},
-    b::AbstractVector{T}, offset::Int, stride::Int) where {T<:Number}
+function multiply_strided!(
+    x::AbstractVector{T},
+    A::BandedTridiag{T},
+    b::AbstractVector{T},
+    offset::Int,
+    stride::Int,
+) where {T<:Number}
     @assert offset in [0, 1] "offset must be 0 or 1"
     @assert stride in [1, 2] "stride must be 1 or 2"
-    
+
     # Create a view into the vectors with the appropriate stride pattern
     x_view = @view x[offset+1:stride:offset+1+stride*(A.num_rows-1)]
     b_view = @view b[offset+1:stride:offset+1+stride*(A.num_rows-1)]
-    
+
     # Row 1 - full band multiplication
     b_view[1] = sum(first_row(A, j) * x_view[j] for j = 1:A.num_rows)
-    
+
     # Rows 2 to num_rows-1 - tridiagonal structure
     for i = 2:(A.num_rows-1)
-        b_view[i] = (lower_diag(A, i) * x_view[i-1] + 
-                     main_diag(A, i) * x_view[i] + 
-                     upper_diag(A, i) * x_view[i+1])
+        b_view[i] = (
+            lower_diag(A, i) * x_view[i-1] +
+            main_diag(A, i) * x_view[i] +
+            upper_diag(A, i) * x_view[i+1]
+        )
     end
-    
+
     # Final row - only lower diagonal and main diagonal
     if A.num_rows > 1
         i = A.num_rows
-        b_view[i] = (lower_diag(A, i) * x_view[i-1] + 
-                     main_diag(A, i) * x_view[i])
+        b_view[i] = (lower_diag(A, i) * x_view[i-1] + main_diag(A, i) * x_view[i])
     end
-    
+
     return b
 end
 
-function multiply!(x::AbstractVector{T}, A::BandedTridiag{T}, b::AbstractVector{T}) where {T<:Number}
+function multiply!(
+    x::AbstractVector{T},
+    A::BandedTridiag{T},
+    b::AbstractVector{T},
+) where {T<:Number}
     multiply_strided!(x, A, b, 0, 1)
 end
 
-function multiply_strided!(x::ChebyCoeff{T}, A::BandedTridiag{T},
-    b::ChebyCoeff{T}, offset::Int, stride::Int) where {T<:Number}
+function multiply_strided!(
+    x::ChebyCoeff{T},
+    A::BandedTridiag{T},
+    b::ChebyCoeff{T},
+    offset::Int,
+    stride::Int,
+) where {T<:Number}
     multiply_strided!(x.data, A, b.data, offset, stride)
 end
 
-function multiply_strided(x::AbstractVector{T}, A::BandedTridiag{T}, offset::Int, stride::Int) where {T<:Number}
+function multiply_strided(
+    x::AbstractVector{T},
+    A::BandedTridiag{T},
+    offset::Int,
+    stride::Int,
+) where {T<:Number}
     b = zeros(T, size(x))
     multiply_strided!(x, A, b, offset, stride)
     return b

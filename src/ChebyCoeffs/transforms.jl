@@ -3,8 +3,8 @@ Defines transform operations for ChebyCoeff.
 Must be included after types_and_constructors.jl.
 =#
 
-export makeSpectral!, makePhysical!, makeState!, setToZero!,
-    setState!, chebyfft!, ichebyfft!
+export makeSpectral!,
+    makePhysical!, makeState!, setToZero!, setState!, chebyfft!, ichebyfft!
 
 """Transform from Physical to Spectral state using provided transform."""
 function chebyfft!(u::ChebyCoeff{T}, t::ChebyTransform) where {T<:Number}

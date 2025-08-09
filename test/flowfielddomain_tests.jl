@@ -49,7 +49,7 @@ using Channelflow
 
         # Test y coordinates (Chebyshev points)
         @test y_coord(domain, 1) ≈ 1.0   # cos(0) = 1
-        @test isapprox(y_coord(domain, 3), 0.0; atol=1e-15)
+        @test isapprox(y_coord(domain, 3), 0.0; atol = 1e-15)
         @test y_coord(domain, 5) ≈ -1.0  # cos(π) = -1
 
         # Test grid point functions

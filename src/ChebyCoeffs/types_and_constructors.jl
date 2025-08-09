@@ -5,9 +5,20 @@ Should be the first include.
 
 using FFTW
 
-export ChebyTransform, ChebyCoeff, FieldState, Physical,
-    Spectral, BC, Diri, Neumann, Parity, Even, Odd,
-    NormType, Uniform, Cheby
+export ChebyTransform,
+    ChebyCoeff,
+    FieldState,
+    Physical,
+    Spectral,
+    BC,
+    Diri,
+    Neumann,
+    Parity,
+    Even,
+    Odd,
+    NormType,
+    Uniform,
+    Cheby
 
 @enum FieldState Physical = 0 Spectral = 1
 
@@ -31,10 +42,10 @@ struct ChebyTransform
 end
 
 "Default constructor for ChebyshevTransform"
-function ChebyTransform(N::Int; flags=FFTW.ESTIMATE)
+function ChebyTransform(N::Int; flags = FFTW.ESTIMATE)
     @assert N > 0 "N must be positive"
     tmp = zeros(Float64, N)
-    cos_plan = FFTW.plan_r2r(tmp, FFTW.REDFT00; flags=flags)
+    cos_plan = FFTW.plan_r2r(tmp, FFTW.REDFT00; flags = flags)
     ChebyTransform(N, cos_plan)
 end
 
@@ -56,12 +67,22 @@ mutable struct ChebyCoeff{T<:Number}
         new{T}(T[], 0.0, 0.0, Spectral)
     end
 
-    function ChebyCoeff{T}(N::Int, a::Real=-1, b::Real=1, state::FieldState=Spectral) where {T<:Number}
+    function ChebyCoeff{T}(
+        N::Int,
+        a::Real = -1,
+        b::Real = 1,
+        state::FieldState = Spectral,
+    ) where {T<:Number}
         @assert b > a "Upper bound must be greater than lower bound"
         new{T}(zeros(T, N), Float64(a), Float64(b), state)
     end
 
-    function ChebyCoeff{T}(data::Vector{<:Number}, a::Real=-1, b::Real=1, state::FieldState=Spectral) where {T<:Number}
+    function ChebyCoeff{T}(
+        data::Vector{<:Number},
+        a::Real = -1,
+        b::Real = 1,
+        state::FieldState = Spectral,
+    ) where {T<:Number}
         @assert b > a "Upper bound must be greater than lower bound"
         new{T}(T.(data), Float64(a), Float64(b), state)
     end
@@ -90,4 +111,5 @@ const ComplexChebyCoeff = ChebyCoeff{ComplexF64}
 
 # Convenience constructors
 ChebyCoeff(args...; kwargs...) = ChebyCoeff{Float64}(args...; kwargs...)
-ChebyCoeff(data::Vector{T}, args...; kwargs...) where {T<:Number} = ChebyCoeff{T}(data, args...; kwargs...)
+ChebyCoeff(data::Vector{T}, args...; kwargs...) where {T<:Number} =
+    ChebyCoeff{T}(data, args...; kwargs...)

@@ -45,7 +45,7 @@ function slope_a(u::ChebyCoeff{T}) where {T<:Number}
     N = length(u.data)
     sum_val = zero(T)
 
-    for n in 1:2:N-1
+    for n = 1:2:N-1
         sum_val += -(n - 1)^2 * u.data[n] + n^2 * u.data[n+1]
     end
 
@@ -92,7 +92,7 @@ function evaluate(u::ChebyCoeff{T}, x::Real) where {T<:Number}
     b_kplus1 = zero(T)
     b_kplus2 = zero(T)
 
-    for k in N:-1:2
+    for k = N:-1:2
         temp = b_kplus1
         b_kplus1 = 2 * y * b_kplus1 - b_kplus2 + u.data[k]
         b_kplus2 = temp
@@ -107,7 +107,7 @@ function mean_value(u::ChebyCoeff{T}) where {T<:Number}
     sum_val = u.data[1]
     N = length(u.data)
 
-    for n in 3:2:N
+    for n = 3:2:N
         sum_val -= u.data[n] / ((n - 1)^2 - 1)
     end
 

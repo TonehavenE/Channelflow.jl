@@ -8,7 +8,8 @@ Implements Fourier transforms in x,z directions and Chebyshev transforms in y di
 using FFTW
 using AbstractFFTs
 
-export FlowFieldTransforms, make_spectral_xz!, make_physical_xz!, make_physical_y!, make_spectral_y!
+export FlowFieldTransforms,
+    make_spectral_xz!, make_physical_xz!, make_physical_y!, make_spectral_y!
 
 """
 Stores FFTW plans and scratch arrays for FlowField transforms.
@@ -46,20 +47,22 @@ function FlowFieldTransforms(domain::FlowFieldDomain{T}) where {T}
     if domain.Nx > 0 && domain.Nz > 0
         # Create sample arrays for FFTW planning
         sample_physical = zeros(T, domain.Nx, domain.Ny, domain.Nz, domain.num_dimensions)
-        sample_spectral = zeros(Complex{T}, domain.Nx, domain.My, domain.Mz, domain.num_dimensions)
+        sample_spectral =
+            zeros(Complex{T}, domain.Nx, domain.My, domain.Mz, domain.num_dimensions)
 
         # Create xz transforms
         # Transform over dimensions (1,3) = (x,z) for each (y,i)
-        xz_plan = plan_rfft(sample_physical, (3, 1); flags=FFTW.MEASURE)
+        xz_plan = plan_rfft(sample_physical, (3, 1); flags = FFTW.MEASURE)
         # println("The size of sample_spectral is: $(size(sample_spectral))")
         # println("The domain is: $(domain)")
         # println("size(sample_spectral, 1): $(size(sample_spectral, 1))")
         # println("and div(2(domain.Mz - 1), 2) + 1 is $(div(2(domain.Mz - 1), 2) + 1)")
-        xz_inverse_plan = plan_irfft(sample_spectral, domain.Nz, (3, 1); flags=FFTW.MEASURE)
+        xz_inverse_plan =
+            plan_irfft(sample_spectral, domain.Nz, (3, 1); flags = FFTW.MEASURE)
 
         # Y transform: DCT-I (REDFT00) for Chebyshev polynomials
         if domain.Ny >= 2
-            y_plan = FFTW.plan_r2r!(y_scratch, FFTW.REDFT00; flags=FFTW.MEASURE)
+            y_plan = FFTW.plan_r2r!(y_scratch, FFTW.REDFT00; flags = FFTW.MEASURE)
         end
     end
 
@@ -78,8 +81,12 @@ Transform x,z directions from physical to spectral space using real-to-complex F
 Input:  physical_data[Nx, Ny, Nz, num_dimensions] - real values u(x,y,z,i)
 Output: spectral_data[Mx, My, Mz, num_dimensions] - complex coefficients û(kx,y,kz,i)
 """
-function make_spectral_xz!(physical_data::Array{T,4}, spectral_data::Array{Complex{T},4},
-    domain::FlowFieldDomain{T}, transforms::FlowFieldTransforms{T}) where {T}
+function make_spectral_xz!(
+    physical_data::Array{T,4},
+    spectral_data::Array{Complex{T},4},
+    domain::FlowFieldDomain{T},
+    transforms::FlowFieldTransforms{T},
+) where {T}
 
     if transforms.xz_plan === nothing
         error("XZ transform plan not initialized")
@@ -104,8 +111,12 @@ Transform x,z directions from spectral to physical space using complex-to-real F
 Input:  spectral_data[Mx, My, Mz, num_dimensions] - complex coefficients û(kx,y,kz,i)
 Output: physical_data[Nx, Ny, Nz, num_dimensions] - real values u(x,y,z,i)
 """
-function make_physical_xz!(spectral_data::Array{Complex{T},4}, physical_data::Array{T,4},
-    domain::FlowFieldDomain{T}, transforms::FlowFieldTransforms{T}) where {T}
+function make_physical_xz!(
+    spectral_data::Array{Complex{T},4},
+    physical_data::Array{T,4},
+    domain::FlowFieldDomain{T},
+    transforms::FlowFieldTransforms{T},
+) where {T}
 
     if transforms.xz_inverse_plan === nothing
         error("XZ inverse transform plan not initialized")
@@ -132,8 +143,11 @@ Works on either real or complex data arrays.
 Input:  data contains values at Chebyshev-Gauss-Lobatto points
 Output: data contains Chebyshev polynomial coefficients
 """
-function make_spectral_y!(data::Array{T,4}, domain::FlowFieldDomain{T},
-    transforms::FlowFieldTransforms{T}) where {T<:Real}
+function make_spectral_y!(
+    data::Array{T,4},
+    domain::FlowFieldDomain{T},
+    transforms::FlowFieldTransforms{T},
+) where {T<:Real}
 
     if domain.Ny < 2
         return data  # Trivial case
@@ -146,11 +160,11 @@ function make_spectral_y!(data::Array{T,4}, domain::FlowFieldDomain{T},
     # Transform each y-profile separately
     # Data layout: [nx, ny, nz, i] - we transform over ny dimension
 
-    for i in 1:domain.num_dimensions
-        for nz in 1:size(data, 3)  # Handle both Nz and Mz cases
-            for nx in 1:size(data, 1)  # Handle both Nx and Mx cases
+    for i = 1:domain.num_dimensions
+        for nz = 1:size(data, 3)  # Handle both Nz and Mz cases
+            for nx = 1:size(data, 1)  # Handle both Nx and Mx cases
                 # Copy y-profile to scratch array
-                for ny in 1:domain.Ny
+                for ny = 1:domain.Ny
                     transforms.y_scratch[ny] = real(data[nx, ny, nz, i])
                 end
 
@@ -164,7 +178,7 @@ function make_spectral_y!(data::Array{T,4}, domain::FlowFieldDomain{T},
                 # Endpoint normalization (0th and last coefficients get factor of 1/2)
                 data[nx, 1, nz, i] = 0.5 * nrm * transforms.y_scratch[1]
 
-                for ny in 2:(domain.Ny-1)
+                for ny = 2:(domain.Ny-1)
                     data[nx, ny, nz, i] = nrm * transforms.y_scratch[ny]
                 end
 
@@ -176,8 +190,11 @@ function make_spectral_y!(data::Array{T,4}, domain::FlowFieldDomain{T},
     return data
 end
 
-function make_spectral_y!(data::Array{Complex{T},4}, domain::FlowFieldDomain{T},
-    transforms::FlowFieldTransforms{T}) where {T<:Real}
+function make_spectral_y!(
+    data::Array{Complex{T},4},
+    domain::FlowFieldDomain{T},
+    transforms::FlowFieldTransforms{T},
+) where {T<:Real}
 
     if domain.Ny < 2
         return data
@@ -190,11 +207,11 @@ function make_spectral_y!(data::Array{Complex{T},4}, domain::FlowFieldDomain{T},
     # Transform each y-profile separately for complex data
     # We need to handle real and imaginary parts separately
 
-    for i in 1:domain.num_dimensions
-        for nz in 1:size(data, 3)
-            for nx in 1:size(data, 1)
+    for i = 1:domain.num_dimensions
+        for nz = 1:size(data, 3)
+            for nx = 1:size(data, 1)
                 # Transform real part
-                for ny in 1:domain.Ny
+                for ny = 1:domain.Ny
                     transforms.y_scratch[ny] = real(data[nx, ny, nz, i])
                 end
 
@@ -205,7 +222,7 @@ function make_spectral_y!(data::Array{Complex{T},4}, domain::FlowFieldDomain{T},
                 real_end = 0.5 * nrm * transforms.y_scratch[domain.Ny]
 
                 # Transform imaginary part
-                for ny in 1:domain.Ny
+                for ny = 1:domain.Ny
                     transforms.y_scratch[ny] = imag(data[nx, ny, nz, i])
                 end
 
@@ -217,15 +234,15 @@ function make_spectral_y!(data::Array{Complex{T},4}, domain::FlowFieldDomain{T},
                 # Combine and store results
                 data[nx, 1, nz, i] = Complex{T}(real_0, imag_0)
 
-                for ny in 2:(domain.Ny-1)
+                for ny = 2:(domain.Ny-1)
                     # Recompute for middle coefficients
-                    for ny2 in 1:domain.Ny
+                    for ny2 = 1:domain.Ny
                         transforms.y_scratch[ny2] = real(data[nx, ny2, nz, i])
                     end
                     transforms.y_plan * transforms.y_scratch
                     real_part = nrm * transforms.y_scratch[ny]
 
-                    for ny2 in 1:domain.Ny
+                    for ny2 = 1:domain.Ny
                         transforms.y_scratch[ny2] = imag(data[nx, ny2, nz, i])
                     end
                     transforms.y_plan * transforms.y_scratch
@@ -253,8 +270,11 @@ Works on either real or complex data arrays.
 Input:  data contains Chebyshev polynomial coefficients  
 Output: data contains values at Chebyshev-Gauss-Lobatto points
 """
-function make_physical_y!(data::Array{T,4}, domain::FlowFieldDomain{T},
-    transforms::FlowFieldTransforms{T}) where {T<:Real}
+function make_physical_y!(
+    data::Array{T,4},
+    domain::FlowFieldDomain{T},
+    transforms::FlowFieldTransforms{T},
+) where {T<:Real}
 
     if domain.Ny < 2
         return data  # Trivial case  
@@ -265,14 +285,14 @@ function make_physical_y!(data::Array{T,4}, domain::FlowFieldDomain{T},
     end
 
     # Transform each y-profile separately
-    for i in 1:domain.num_dimensions
-        for nz in 1:size(data, 3)
-            for nx in 1:size(data, 1)
+    for i = 1:domain.num_dimensions
+        for nz = 1:size(data, 3)
+            for nx = 1:size(data, 1)
                 # Copy y-profile to scratch with inverse normalization
                 # See original C++ code: undo the endpoint scaling
                 transforms.y_scratch[1] = real(data[nx, 1, nz, i])
 
-                for ny in 2:(domain.Ny-1)
+                for ny = 2:(domain.Ny-1)
                     transforms.y_scratch[ny] = 0.5 * real(data[nx, ny, nz, i])
                 end
 
@@ -282,7 +302,7 @@ function make_physical_y!(data::Array{T,4}, domain::FlowFieldDomain{T},
                 transforms.y_plan * transforms.y_scratch
 
                 # Copy back to data array
-                for ny in 1:domain.Ny
+                for ny = 1:domain.Ny
                     data[nx, ny, nz, i] = transforms.y_scratch[ny]
                 end
             end
@@ -292,8 +312,11 @@ function make_physical_y!(data::Array{T,4}, domain::FlowFieldDomain{T},
     return data
 end
 
-function make_physical_y!(data::Array{Complex{T},4}, domain::FlowFieldDomain{T},
-    transforms::FlowFieldTransforms{T}) where {T<:Real}
+function make_physical_y!(
+    data::Array{Complex{T},4},
+    domain::FlowFieldDomain{T},
+    transforms::FlowFieldTransforms{T},
+) where {T<:Real}
 
     if domain.Ny < 2
         return data  # Trivial case  
@@ -304,13 +327,13 @@ function make_physical_y!(data::Array{Complex{T},4}, domain::FlowFieldDomain{T},
     end
 
     # Transform each y-profile separately for complex data
-    for i in 1:domain.num_dimensions
-        for nz in 1:size(data, 3)
-            for nx in 1:size(data, 1)
+    for i = 1:domain.num_dimensions
+        for nz = 1:size(data, 3)
+            for nx = 1:size(data, 1)
                 # Transform real part
                 transforms.y_scratch[1] = real(data[nx, 1, nz, i])
 
-                for ny in 2:(domain.Ny-1)
+                for ny = 2:(domain.Ny-1)
                     transforms.y_scratch[ny] = 0.5 * real(data[nx, ny, nz, i])
                 end
 
@@ -323,7 +346,7 @@ function make_physical_y!(data::Array{Complex{T},4}, domain::FlowFieldDomain{T},
                 # Transform imaginary part
                 transforms.y_scratch[1] = imag(data[nx, 1, nz, i])
 
-                for ny in 2:(domain.Ny-1)
+                for ny = 2:(domain.Ny-1)
                     transforms.y_scratch[ny] = 0.5 * imag(data[nx, ny, nz, i])
                 end
 
@@ -332,8 +355,9 @@ function make_physical_y!(data::Array{Complex{T},4}, domain::FlowFieldDomain{T},
                 transforms.y_plan * transforms.y_scratch
 
                 # Combine results
-                for ny in 1:domain.Ny
-                    data[nx, ny, nz, i] = Complex{T}(real_result[ny], transforms.y_scratch[ny])
+                for ny = 1:domain.Ny
+                    data[nx, ny, nz, i] =
+                        Complex{T}(real_result[ny], transforms.y_scratch[ny])
                 end
             end
         end

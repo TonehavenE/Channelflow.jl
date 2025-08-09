@@ -142,7 +142,13 @@ end
 
 In-place linear combination: ff = a*ff1 + b*ff2
 """
-function add!(ff::FlowField{T}, a::Number, ff1::FlowField{T}, b::Number, ff2::FlowField{T}) where {T}
+function add!(
+    ff::FlowField{T},
+    a::Number,
+    ff1::FlowField{T},
+    b::Number,
+    ff2::FlowField{T},
+) where {T}
     @assert congruent(ff, ff1) && congruent(ff, ff2) "All FlowFields must be congruent"
     @assert ff1.xz_state == ff2.xz_state && ff1.y_state == ff2.y_state "Input FlowFields must be in same state"
 

@@ -34,7 +34,7 @@ function derivative(u::ChebyCoeff{T}) where {T<:Number}
     end
 
     # backward recurrence: b_n = b_{n+2} + scale * n * a_{n + 1}
-    for n in N-2:-1:1
+    for n = N-2:-1:1
         result.data[n] = result.data[n+2] + scale * n * u.data[n+1]
     end
 
@@ -53,7 +53,7 @@ end
 function derivative(u::ChebyCoeff{T}, n::Int) where {T<:Number}
     @assert n >= 0 "Derivative order must be non-negative"
     result = u
-    for _ in 1:n
+    for _ = 1:n
         result = derivative(result)
     end
     return result
@@ -81,7 +81,7 @@ function integrate(dudy::ChebyCoeff{T}) where {T<:Number}
     h2 = domain_length(dudy) / 2
     result.data[2] = h2 * (dudy.data[1] - dudy.data[3] / 2)
 
-    for n in 3:N-1
+    for n = 3:N-1
         result.data[n] = h2 * (dudy.data[n-1] - dudy.data[n+1]) / (2 * (n - 1))
     end
 

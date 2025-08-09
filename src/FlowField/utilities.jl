@@ -51,15 +51,16 @@ function zero_padded_modes!(ff::FlowField)
     @assert ff.spectral_data !== nothing "Spectral data must be allocated"
 
     # Zero out modes beyond the 2/3 dealiasing limit
-    for i in 1:ff.domain.num_dimensions
-        for my in 1:ff.domain.My
-            for mx in 1:ff.domain.Mx
+    for i = 1:ff.domain.num_dimensions
+        for my = 1:ff.domain.My
+            for mx = 1:ff.domain.Mx
                 kx = mx_to_kx(ff, mx)
-                for mz in 1:ff.domain.Mz
+                for mz = 1:ff.domain.Mz
                     kz = mz_to_kz(ff, mz)
 
                     if is_aliased(ff, kx, kz)
-                        ff.spectral_data[mx, my, mz, i] = Complex{eltype(ff.spectral_data)}(0)
+                        ff.spectral_data[mx, my, mz, i] =
+                            Complex{eltype(ff.spectral_data)}(0)
                     end
                 end
             end

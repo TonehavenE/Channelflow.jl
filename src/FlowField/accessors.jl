@@ -1,13 +1,37 @@
 #=
 Defines accessor methods for FlowField structures. Should be included after types_and_constructors.jl.
 =#
-export cmplx, set_cmplx!, num_x_gridpoints, num_y_gridpoints,
-    num_z_gridpoints, num_gridpoints, num_x_modes, num_y_modes,
-    num_z_modes, num_modes, vector_dim, xz_state, y_state,
-    Lx, Ly, Lz, domain_a, domain_b,
-    x, y, z, x_gridpoints, y_gridpoints, z_gridpoints,
-    kx_to_mx, mx_to_kx, kz_to_mz, mz_to_kz,
-    kx_max_dealiased, kz_max_dealiased, is_aliased
+export cmplx,
+    set_cmplx!,
+    num_x_gridpoints,
+    num_y_gridpoints,
+    num_z_gridpoints,
+    num_gridpoints,
+    num_x_modes,
+    num_y_modes,
+    num_z_modes,
+    num_modes,
+    vector_dim,
+    xz_state,
+    y_state,
+    Lx,
+    Ly,
+    Lz,
+    domain_a,
+    domain_b,
+    x,
+    y,
+    z,
+    x_gridpoints,
+    y_gridpoints,
+    z_gridpoints,
+    kx_to_mx,
+    mx_to_kx,
+    kz_to_mz,
+    mz_to_kz,
+    kx_max_dealiased,
+    kz_max_dealiased,
+    is_aliased
 
 # ===========================
 # Element Access Methods
@@ -60,7 +84,14 @@ end
 
 Set spectral coefficient. Requires FlowField to be in Spectral xz state.
 """
-function set_cmplx!(ff::FlowField{T}, val::Complex{T}, mx::Int, my::Int, mz::Int, i::Int) where {T}
+function set_cmplx!(
+    ff::FlowField{T},
+    val::Complex{T},
+    mx::Int,
+    my::Int,
+    mz::Int,
+    i::Int,
+) where {T}
     @assert ff.xz_state == Spectral "FlowField must be in Spectral xz state for spectral access"
     _ensure_data_allocated!(ff)
     @assert 1 <= mx <= ff.domain.Mx "mx out of bounds"

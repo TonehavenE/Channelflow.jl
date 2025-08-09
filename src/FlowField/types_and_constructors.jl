@@ -31,11 +31,19 @@ end
 Create a FlowField with specified grid and domain parameters.
 FFTW plans are created immediately for efficiency.
 """
-function FlowField(Nx::Int, Ny::Int, Nz::Int, num_dimensions::Int,
-    Lx::T, Lz::T, a::T, b::T;
-    padded::Bool=false,
-    xz_state::FieldState=Physical,
-    y_state::FieldState=Physical) where {T<:Real}
+function FlowField(
+    Nx::Int,
+    Ny::Int,
+    Nz::Int,
+    num_dimensions::Int,
+    Lx::T,
+    Lz::T,
+    a::T,
+    b::T;
+    padded::Bool = false,
+    xz_state::FieldState = Physical,
+    y_state::FieldState = Physical,
+) where {T<:Real}
 
     # Create domain
     domain = FlowFieldDomain(Nx, Ny, Nz, num_dimensions, Lx, Lz, a, b)
@@ -47,13 +55,22 @@ function FlowField(Nx::Int, Ny::Int, Nz::Int, num_dimensions::Int,
     if xz_state == Physical
         physical_data = zeros(T, domain.Nx, domain.Ny, domain.Nz, domain.num_dimensions)
     else
-        spectral_data = zeros(Complex{T}, domain.Mx, domain.My, domain.Mz, domain.num_dimensions)
+        spectral_data =
+            zeros(Complex{T}, domain.Mx, domain.My, domain.Mz, domain.num_dimensions)
     end
 
     # Create FFTW plans
     transforms = FlowFieldTransforms(domain)
 
-    return FlowField{T}(domain, xz_state, y_state, padded, physical_data, spectral_data, transforms)
+    return FlowField{T}(
+        domain,
+        xz_state,
+        y_state,
+        padded,
+        physical_data,
+        spectral_data,
+        transforms,
+    )
 end
 
 """
@@ -61,10 +78,12 @@ end
 
 Create FlowField from existing domain object.
 """
-function FlowField(domain::FlowFieldDomain{T};
-    padded::Bool=false,
-    xz_state::FieldState=Physical,
-    y_state::FieldState=Physical) where {T}
+function FlowField(
+    domain::FlowFieldDomain{T};
+    padded::Bool = false,
+    xz_state::FieldState = Physical,
+    y_state::FieldState = Physical,
+) where {T}
 
     physical_data = nothing
     spectral_data = nothing
@@ -72,12 +91,21 @@ function FlowField(domain::FlowFieldDomain{T};
     if xz_state == Physical
         physical_data = zeros(T, domain.Nx, domain.Ny, domain.Nz, domain.num_dimensions)
     else
-        spectral_data = zeros(Complex{T}, domain.Mx, domain.My, domain.Mz, domain.num_dimensions)
+        spectral_data =
+            zeros(Complex{T}, domain.Mx, domain.My, domain.Mz, domain.num_dimensions)
     end
 
     transforms = FlowFieldTransforms(domain)
 
-    return FlowField{T}(domain, xz_state, y_state, padded, physical_data, spectral_data, transforms)
+    return FlowField{T}(
+        domain,
+        xz_state,
+        y_state,
+        padded,
+        physical_data,
+        spectral_data,
+        transforms,
+    )
 end
 
 """
@@ -89,8 +117,15 @@ function FlowField(other::FlowField{T}) where {T}
     physical_data = other.physical_data === nothing ? nothing : copy(other.physical_data)
     spectral_data = other.spectral_data === nothing ? nothing : copy(other.spectral_data)
 
-    return FlowField{T}(other.domain, other.xz_state, other.y_state,
-        other.padded, physical_data, spectral_data, other.transforms)
+    return FlowField{T}(
+        other.domain,
+        other.xz_state,
+        other.y_state,
+        other.padded,
+        physical_data,
+        spectral_data,
+        other.transforms,
+    )
 end
 
 # ===========================
@@ -102,9 +137,16 @@ Ensure appropriate data array exists for current state.
 """
 function _ensure_data_allocated!(ff::FlowField{T}) where {T}
     if ff.xz_state == Physical && ff.physical_data === nothing
-        ff.physical_data = zeros(T, ff.domain.Nx, ff.domain.Ny, ff.domain.Nz, ff.domain.num_dimensions)
+        ff.physical_data =
+            zeros(T, ff.domain.Nx, ff.domain.Ny, ff.domain.Nz, ff.domain.num_dimensions)
     elseif ff.xz_state == Spectral && ff.spectral_data === nothing
-        ff.spectral_data = zeros(Complex{T}, ff.domain.Mx, ff.domain.My, ff.domain.Mz, ff.domain.num_dimensions)
+        ff.spectral_data = zeros(
+            Complex{T},
+            ff.domain.Mx,
+            ff.domain.My,
+            ff.domain.Mz,
+            ff.domain.num_dimensions,
+        )
     end
 end
 

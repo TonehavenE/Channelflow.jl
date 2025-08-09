@@ -59,12 +59,12 @@ function build_left_tridiag(v::CoeffVariables, numModes::Int, parity::Parity)::B
     A = BandedTridiag(numModes)
 
     # Set first row to all ones
-    for i in 1:numModes
+    for i = 1:numModes
         A[1, i] = 1.0
     end
 
     # Fill tridiagonal rows
-    for i in 2:numModes
+    for i = 2:numModes
         n = 2 * (i - 1)
         if parity == Odd
             n += 1
@@ -83,14 +83,18 @@ function build_left_tridiag(v::CoeffVariables, numModes::Int, parity::Parity)::B
     return A
 end
 
-function build_right_tridiag(v::CoeffVariables, numModes::Int, parity::Parity)::BandedTridiag
+function build_right_tridiag(
+    v::CoeffVariables,
+    numModes::Int,
+    parity::Parity,
+)::BandedTridiag
     B = BandedTridiag(numModes)
 
     # First row
     B[1, 1] = 1.0
 
     # Fill tridiagonal rows
-    for i in 2:numModes
+    for i = 2:numModes
         n = 2 * (i - 1)
         if parity == Odd
             n += 1
@@ -131,7 +135,7 @@ struct HelmholtzProblem
         a::Real,
         b::Real,
         lambda::Real,
-        nu::Real=1.0,
+        nu::Real = 1.0,
     )
         @assert number_modes % 2 == 1 "Number of modes must be odd"
         @assert number_modes > 2 "Must have at least three modes"
@@ -158,7 +162,22 @@ struct HelmholtzProblem
         UL_decompose!(Ae)
         UL_decompose!(Ao)
 
-        new(number_modes, a, b, lambda, nu, N, n_even_modes, n_odd_modes, c, β, Ae, Ao, Be, Bo)
+        new(
+            number_modes,
+            a,
+            b,
+            lambda,
+            nu,
+            N,
+            n_even_modes,
+            n_odd_modes,
+            c,
+            β,
+            Ae,
+            Ao,
+            Be,
+            Bo,
+        )
     end
 end
 
@@ -210,7 +229,14 @@ Then solve:
 
 Where mu is chosen so that the total solution has the desired mean value.
 """
-function solve!(h::HelmholtzProblem, u::ChebyCoeff, f::ChebyCoeff, umean::Real, ua::Real, ub::Real)
+function solve!(
+    h::HelmholtzProblem,
+    u::ChebyCoeff,
+    f::ChebyCoeff,
+    umean::Real,
+    ua::Real,
+    ub::Real,
+)
     @assert f.state == Spectral "RHS must be in spectral form"
 
     N = h.number_modes
@@ -293,7 +319,9 @@ function test_helmholtz()
         println("✗ Test FAILED - Error too large")
         println("First few values:")
         for i = 1:min(10, length(u.data))
-            @printf "  x=%.3f: computed=%.6f, exact=%.6f, error=%.2e\n" x_points[i] u.data[i] u_analytical[i] abs(u.data[i] - u_analytical[i])
+            @printf "  x=%.3f: computed=%.6f, exact=%.6f, error=%.2e\n" x_points[i] u.data[i] u_analytical[i] abs(
+                u.data[i] - u_analytical[i],
+            )
         end
     end
 

@@ -2,7 +2,13 @@
 Defines transform methods for FlowField structures. Should be included after types_and_constructors.jl and FlowFieldTransforms.jl.
 =#
 
-export make_physical!, make_spectral!, make_state!, make_physical_xz!, make_spectral_xz!, make_physical_y!, make_spectral_y!
+export make_physical!,
+    make_spectral!,
+    make_state!,
+    make_physical_xz!,
+    make_spectral_xz!,
+    make_physical_y!,
+    make_spectral_y!
 
 # ===========================
 # Transform Methods
@@ -23,7 +29,13 @@ function make_spectral_xz!(ff::FlowField{T}) where {T}
 
     # Allocate spectral data if needed
     if ff.spectral_data === nothing
-        ff.spectral_data = zeros(Complex{T}, ff.domain.Mx, ff.domain.My, ff.domain.Mz, ff.domain.num_dimensions)
+        ff.spectral_data = zeros(
+            Complex{T},
+            ff.domain.Mx,
+            ff.domain.My,
+            ff.domain.Mz,
+            ff.domain.num_dimensions,
+        )
     end
 
     make_spectral_xz!(ff.physical_data, ff.spectral_data, ff.domain, ff.transforms) # delegates to FlowFieldTransforms.jl
@@ -47,7 +59,8 @@ function make_physical_xz!(ff::FlowField{T}) where {T}
 
     # Allocate physical data if needed
     if ff.physical_data === nothing
-        ff.physical_data = zeros(T, ff.domain.Nx, ff.domain.Ny, ff.domain.Nz, ff.domain.num_dimensions)
+        ff.physical_data =
+            zeros(T, ff.domain.Nx, ff.domain.Ny, ff.domain.Nz, ff.domain.num_dimensions)
     end
 
     make_physical_xz!(ff.spectral_data, ff.physical_data, ff.domain, ff.transforms)
