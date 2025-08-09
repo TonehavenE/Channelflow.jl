@@ -2,7 +2,7 @@ module Channelflow
 
 using Reexport
 
-include("Coefficients.jl")
+include("ChebyCoeffs.jl")
 include("BandedTridiag.jl")
 include("HelmholtzSolver.jl")
 include("FlowField.jl")
