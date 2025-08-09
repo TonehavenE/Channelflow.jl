@@ -12,6 +12,7 @@ export cmplx,
     num_z_modes,
     num_modes,
     vector_dim,
+    num_dimensions,
     xz_state,
     y_state,
     Lx,
@@ -25,6 +26,10 @@ export cmplx,
     x_gridpoints,
     y_gridpoints,
     z_gridpoints,
+    kx_max,
+    kz_max,
+    kx_min,
+    kz_min,
     kx_to_mx,
     mx_to_kx,
     kz_to_mz,
@@ -119,6 +124,7 @@ num_modes(ff::FlowField) = (ff.domain.Mx, ff.domain.My, ff.domain.Mz)
 
 # Field properties
 vector_dim(ff::FlowField) = ff.domain.num_dimensions
+num_dimensions(ff::FlowField) = ff.domain.num_dimensions
 xz_state(ff::FlowField) = ff.xz_state
 y_state(ff::FlowField) = ff.y_state
 
@@ -143,6 +149,12 @@ kx_to_mx(ff::FlowField, kx::Int) = kx_to_mx(ff.domain, kx)
 mx_to_kx(ff::FlowField, mx::Int) = mx_to_kx(ff.domain, mx)
 kz_to_mz(ff::FlowField, kz::Int) = kz_to_mz(ff.domain, kz)
 mz_to_kz(ff::FlowField, mz::Int) = mz_to_kz(ff.domain, mz)
+
+# max and mins
+kx_max(ff::FlowField) = div(ff.domain.Nx, 2)
+kz_max(ff::FlowField) = div(ff.domain.Nz, 2)
+kx_min(ff::FlowField) = -div(ff.domain.Nx, 2) + 1
+kz_min(ff::FlowField) = 0
 
 # Dealiasing
 kx_max_dealiased(ff::FlowField) = kx_max_dealiased(ff.domain)
