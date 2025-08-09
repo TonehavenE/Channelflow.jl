@@ -3,7 +3,7 @@ module Channelflow
 include("Coefficients.jl")
 include("BandedTridiag.jl")
 include("HelmholtzSolver.jl")
-include("FlowField/FlowField.jl")
+include("FlowField.jl")
 
 using .ChebyCoeffs
 

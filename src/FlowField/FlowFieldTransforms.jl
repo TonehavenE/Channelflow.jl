@@ -1,12 +1,14 @@
-"""
+#=
 FlowFieldTransforms.jl
 
 Handles FFTW plans and spectral transforms for FlowField objects.
 Implements Fourier transforms in x,z directions and Chebyshev transforms in y direction.
-"""
+=#
 
 using FFTW
 using AbstractFFTs
+
+export FlowFieldTransforms, make_spectral_xz!, make_physical_xz!, make_physical_y!, make_spectral_y!
 
 """
 Stores FFTW plans and scratch arrays for FlowField transforms.

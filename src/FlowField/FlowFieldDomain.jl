@@ -1,9 +1,9 @@
-"""
+#=
 FlowFieldDomain.jl
 
 Defines the FlowFieldDomain type that stores all grid and domain parameters
 for spectral flow field computations.
-"""
+=#
 
 export FlowFieldDomain, x_coord, y_coord, z_coord,
     x_gridpoints, y_gridpoints, z_gridpoints,
