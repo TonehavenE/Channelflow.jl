@@ -83,3 +83,54 @@ Returns sqrt(boundary_condition_distance2(ff, gg, normalize=normalize)).
 function boundary_condition_distance(ff::FlowField, gg::FlowField, normalize::Bool=true)
     return sqrt(boundary_condition_distance2(ff, gg, normalize))
 end
+
+raw"""
+    L2Norm2(ff::FlowField, normalize::Bool=true)
+
+Returns the L2 norm squared of a FlowField.
+
+```math
+\int ||f||^2 dx dy dz (/ (Lx * Lz)~\text{if normalize})
+```
+"""
+function L2Norm2(ff::FlowField, normalize::Bool=true)
+    @assert xz_state(ff) == Spectral "FlowField must be in Spectral xz state for spectral access"
+    @assert y_state(ff) == Spectral "FlowField must be in Spectral y state for spectral access"
+
+    sum = 0.0
+    profile = ChebyCoeff{Complex}(num_y_modes(ff), domain_a(ff), domain_b(ff), Spectral)
+
+    kxmin = ff.padded ? -kx_max_dealiased(ff) : kx_min(ff)
+    kxmax = ff.padded ? kx_max_dealiased(ff) : kx_max(ff)
+    kzmin = ff.padded ? -kz_max_dealiased(ff) : kz_min(ff)
+    kzmax = ff.padded ? kz_max_dealiased(ff) : kz_max(ff)
+
+    for i = 1:num_dimensions(ff), kx = kxmin:kxmax
+        mx = kx_to_mx(ff, kx)
+        cz = 1
+        for kz = kzmin:kzmax
+            mz = kz_to_mz(ff, kz)
+            for my = 1:num_y_modes(ff)
+                profile[my] = cmplx(ff, mx, my, mz, i)
+            end
+            sum += cz * L2Norm2(profile, normalize)
+            cz = 2
+        end
+    end
+    if !normalize
+        sum *= Lx(ff) * Lz(ff)
+    end
+
+    return sum
+end
+
+"""
+    L2Norm(ff, normalize)
+
+Calculates the L2 norm of a flow field.
+
+L2Norm(ff, normalize) = sqrt(L2Norm2(ff, normalize))
+"""
+function L2Norm(ff::FlowField, normalize::Bool=true)
+    return sqrt(L2Norm2(ff, normalize))
+end
