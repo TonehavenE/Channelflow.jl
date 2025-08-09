@@ -29,4 +29,28 @@ export HelmholtzProblem, solve!, test_helmholtz, solve
 
 using .FlowFields
 
+# FlowFieldDomain exports
+export FlowFieldDomain, x_coord, y_coord, z_coord,
+    x_gridpoints, y_gridpoints, z_gridpoints,
+    kx_range, kz_range, kx_to_mx, mx_to_kx,
+    kz_to_mz, mz_to_kz, kx_max_dealiased,
+    kz_max_dealiased, is_aliased,
+    geom_congruent, congruent
+
+export FlowField, FlowFieldDomain, FlowFieldTransforms
+export _current_data, _ensure_data_allocated!
+export cmplx, set_cmplx!
+export num_x_gridpoints, num_y_gridpoints, num_z_gridpoints, num_gridpoints
+export num_x_modes, num_y_modes, num_z_modes, num_modes
+export vector_dim, xz_state, y_state
+export Lx, Ly, Lz, domain_a, domain_b
+export x, y, z, x_gridpoints, y_gridpoints, z_gridpoints
+export kx_to_mx, mx_to_kx, kz_to_mz, mz_to_kz
+export kx_max_dealiased, kz_max_dealiased, is_aliased
+export geom_congruent, congruent
+export make_physical!, make_spectral!, make_state!, make_physical_xz!, make_spectral_xz!, make_physical_y!, make_spectral_y!
+export scale!, add!, subtract!, add!, set_to_zero!
+export swap!, zero_padded_modes!
+export resize!, rescale!
+
 end

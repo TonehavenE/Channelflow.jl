@@ -3,35 +3,51 @@ module FlowFields
 """
 FlowField.jl
 
-Main FlowField implementation using single array storage like the original C++ code.
+Main FlowField implementation using separate arrays for physical and spectral data.
 """
 
 using FFTW
+using ..ChebyCoeffs
+
 include("FlowFieldDomain.jl")
 include("FlowFieldTransforms.jl")
 
-@enum FieldState Physical Spectral
+export FlowField, FlowFieldTransforms
+export _current_data, _ensure_data_allocated!
+export cmplx, set_cmplx!
+export num_x_gridpoints, num_y_gridpoints, num_z_gridpoints, num_gridpoints
+export num_x_modes, num_y_modes, num_z_modes, num_modes
+export vector_dim, xz_state, y_state
+export Lx, Ly, Lz, domain_a, domain_b
+export x, y, z, x_gridpoints, y_gridpoints, z_gridpoints
+export kx_to_mx, mx_to_kx, kz_to_mz, mz_to_kz
+export kx_max_dealiased, kz_max_dealiased, is_aliased
+export geom_congruent, congruent
+export make_physical!, make_spectral!, make_state!, make_physical_xz!, make_spectral_xz!, make_physical_y!, make_spectral_y!
+export scale!, add!, subtract!, add!, set_to_zero!
+export swap!, zero_padded_modes!
+export resize!, rescale!
 
 """
 FlowField stores 3D vector fields with Fourier x Chebyshev x Fourier spectral expansions.
 
-Key design decisions matching the original C++ implementation:
-1. Single data array `data` stores both physical and spectral values
-2. In physical state: data[nx,ny,nz,i] = u(x,y,z,i) 
-3. In spectral state: data contains packed complex coefficients
-   - Real parts at data[nx,ny,2*mz-1,i]  
-   - Imaginary parts at data[nx,ny,2*mz,i]
-4. FFTW plans are created once and reused
-5. Transforms are done in-place to minimize memory allocation
-
-Data layout: [Nx, Ny, Nzpad, num_dimensions] where Nzpad = 2*(Nz/2+1)
+Key design changes from original packed storage:
+1. Separate arrays for physical and spectral data
+2. Physical data: real array [Nx, Ny, Nz, num_dimensions]
+3. Spectral data: complex array [Mx, My, Mz, num_dimensions] 
+4. Much cleaner access patterns and arithmetic operations
+5. FFTW plans are created once and reused
 """
 mutable struct FlowField{T<:Real}
     domain::FlowFieldDomain{T}
     xz_state::FieldState
     y_state::FieldState
     padded::Bool  # Flag for dealiasing
-    data::Array{T,4}  # Single array: [Nx, Ny, Nzpad, num_dimensions]
+
+    # Separate storage for physical and spectral data
+    physical_data::Union{Array{T,4},Nothing}          # [Nx, Ny, Nz, num_dimensions]
+    spectral_data::Union{Array{Complex{T},4},Nothing}  # [Mx, My, Mz, num_dimensions]
+
     transforms::FlowFieldTransforms{T}
 end
 
@@ -54,13 +70,20 @@ function FlowField(Nx::Int, Ny::Int, Nz::Int, num_dimensions::Int,
     # Create domain
     domain = FlowFieldDomain(Nx, Ny, Nz, num_dimensions, Lx, Lz, a, b)
 
-    # Allocate single data array with padding
-    data = zeros(T, domain.Nx, domain.Ny, domain.Nzpad, domain.num_dimensions)
+    # Allocate appropriate data arrays based on initial state
+    physical_data = nothing
+    spectral_data = nothing
+
+    if xz_state == Physical
+        physical_data = zeros(T, domain.Nx, domain.Ny, domain.Nz, domain.num_dimensions)
+    else
+        spectral_data = zeros(Complex{T}, domain.Mx, domain.My, domain.Mz, domain.num_dimensions)
+    end
 
     # Create FFTW plans
     transforms = FlowFieldTransforms(domain)
 
-    return FlowField{T}(domain, xz_state, y_state, padded, data, transforms)
+    return FlowField{T}(domain, xz_state, y_state, padded, physical_data, spectral_data, transforms)
 end
 
 """
@@ -73,10 +96,18 @@ function FlowField(domain::FlowFieldDomain{T};
     xz_state::FieldState=Physical,
     y_state::FieldState=Physical) where {T}
 
-    data = zeros(T, domain.Nx, domain.Ny, domain.Nzpad, domain.num_dimensions)
+    physical_data = nothing
+    spectral_data = nothing
+
+    if xz_state == Physical
+        physical_data = zeros(T, domain.Nx, domain.Ny, domain.Nz, domain.num_dimensions)
+    else
+        spectral_data = zeros(Complex{T}, domain.Mx, domain.My, domain.Mz, domain.num_dimensions)
+    end
+
     transforms = FlowFieldTransforms(domain)
 
-    return FlowField{T}(domain, xz_state, y_state, padded, data, transforms)
+    return FlowField{T}(domain, xz_state, y_state, padded, physical_data, spectral_data, transforms)
 end
 
 """
@@ -85,8 +116,37 @@ end
 Copy constructor - creates deep copy of data but shares FFTW plans.
 """
 function FlowField(other::FlowField{T}) where {T}
+    physical_data = other.physical_data === nothing ? nothing : copy(other.physical_data)
+    spectral_data = other.spectral_data === nothing ? nothing : copy(other.spectral_data)
+
     return FlowField{T}(other.domain, other.xz_state, other.y_state,
-        other.padded, copy(other.data), other.transforms)
+        other.padded, physical_data, spectral_data, other.transforms)
+end
+
+# ===========================
+# Internal Data Management
+# ===========================
+
+"""
+Ensure appropriate data array exists for current state.
+"""
+function _ensure_data_allocated!(ff::FlowField{T}) where {T}
+    if ff.xz_state == Physical && ff.physical_data === nothing
+        ff.physical_data = zeros(T, ff.domain.Nx, ff.domain.Ny, ff.domain.Nz, ff.domain.num_dimensions)
+    elseif ff.xz_state == Spectral && ff.spectral_data === nothing
+        ff.spectral_data = zeros(Complex{T}, ff.domain.Mx, ff.domain.My, ff.domain.Mz, ff.domain.num_dimensions)
+    end
+end
+
+"""
+Get reference to current active data array.
+"""
+function _current_data(ff::FlowField)
+    if ff.xz_state == Physical
+        return ff.physical_data
+    else
+        return ff.spectral_data
+    end
 end
 
 # ===========================
@@ -101,68 +161,53 @@ Uses 1-based indexing.
 """
 function Base.getindex(ff::FlowField, nx::Int, ny::Int, nz::Int, i::Int)
     @assert ff.xz_state == Physical "FlowField must be in Physical xz state for direct access"
+    @assert ff.physical_data !== nothing "Physical data not allocated"
     @assert 1 <= nx <= ff.domain.Nx "nx out of bounds"
     @assert 1 <= ny <= ff.domain.Ny "ny out of bounds"
     @assert 1 <= nz <= ff.domain.Nz "nz out of bounds"
     @assert 1 <= i <= ff.domain.num_dimensions "component index i out of bounds"
-    return ff.data[nx, ny, nz, i]
+    return ff.physical_data[nx, ny, nz, i]
 end
 
 function Base.setindex!(ff::FlowField, val, nx::Int, ny::Int, nz::Int, i::Int)
     @assert ff.xz_state == Physical "FlowField must be in Physical xz state for direct access"
+    _ensure_data_allocated!(ff)
     @assert 1 <= nx <= ff.domain.Nx "nx out of bounds"
     @assert 1 <= ny <= ff.domain.Ny "ny out of bounds"
     @assert 1 <= nz <= ff.domain.Nz "nz out of bounds"
     @assert 1 <= i <= ff.domain.num_dimensions "component index i out of bounds"
-    ff.data[nx, ny, nz, i] = val
+    ff.physical_data[nx, ny, nz, i] = val
 end
 
 """
     cmplx(ff, mx, my, mz, i)
 
 Access spectral coefficients. Requires FlowField to be in Spectral xz state.
-Returns Complex{T} by unpacking from real storage format.
+Returns Complex{T} directly.
 """
 function cmplx(ff::FlowField{T}, mx::Int, my::Int, mz::Int, i::Int) where {T}
     @assert ff.xz_state == Spectral "FlowField must be in Spectral xz state for spectral access"
+    @assert ff.spectral_data !== nothing "Spectral data not allocated"
     @assert 1 <= mx <= ff.domain.Mx "mx out of bounds"
     @assert 1 <= my <= ff.domain.My "my out of bounds"
     @assert 1 <= mz <= ff.domain.Mz "mz out of bounds"
     @assert 1 <= i <= ff.domain.num_dimensions "component index i out of bounds"
-
-    # Unpack complex value from real storage
-    z_real_idx = 2 * mz - 1
-    z_imag_idx = 2 * mz
-
-    real_part = (z_real_idx <= ff.domain.Nzpad) ? ff.data[mx, my, z_real_idx, i] : T(0)
-    imag_part = (z_imag_idx <= ff.domain.Nzpad) ? ff.data[mx, my, z_imag_idx, i] : T(0)
-
-    return Complex{T}(real_part, imag_part)
+    return ff.spectral_data[mx, my, mz, i]
 end
 
 """
     set_cmplx!(ff, val, mx, my, mz, i)
 
 Set spectral coefficient. Requires FlowField to be in Spectral xz state.
-Packs Complex{T} into real storage format.
 """
 function set_cmplx!(ff::FlowField{T}, val::Complex{T}, mx::Int, my::Int, mz::Int, i::Int) where {T}
     @assert ff.xz_state == Spectral "FlowField must be in Spectral xz state for spectral access"
+    _ensure_data_allocated!(ff)
     @assert 1 <= mx <= ff.domain.Mx "mx out of bounds"
     @assert 1 <= my <= ff.domain.My "my out of bounds"
     @assert 1 <= mz <= ff.domain.Mz "mz out of bounds"
     @assert 1 <= i <= ff.domain.num_dimensions "component index i out of bounds"
-
-    # Pack complex value into real storage
-    z_real_idx = 2 * mz - 1
-    z_imag_idx = 2 * mz
-
-    if z_real_idx <= ff.domain.Nzpad
-        ff.data[mx, my, z_real_idx, i] = real(val)
-    end
-    if z_imag_idx <= ff.domain.Nzpad
-        ff.data[mx, my, z_imag_idx, i] = imag(val)
-    end
+    ff.spectral_data[mx, my, mz, i] = val
 end
 
 # ===========================
@@ -233,15 +278,23 @@ end
     make_spectral_xz!(ff)
 
 Transform x,z directions from physical to spectral (Fourier) space.
-Uses in-place FFTW transforms with proper normalization.
+Uses FFTW transforms with proper normalization.
 """
 function make_spectral_xz!(ff::FlowField{T}) where {T}
     if ff.xz_state == Spectral
         return ff
     end
 
-    make_spectral_xz!(ff.data, ff.domain, ff.transforms)
+    @assert ff.physical_data !== nothing "Physical data must be allocated"
+
+    # Allocate spectral data if needed
+    if ff.spectral_data === nothing
+        ff.spectral_data = zeros(Complex{T}, ff.domain.Mx, ff.domain.My, ff.domain.Mz, ff.domain.num_dimensions)
+    end
+
+    make_spectral_xz!(ff.physical_data, ff.spectral_data, ff.domain, ff.transforms)
     ff.xz_state = Spectral
+
     return ff
 end
 
@@ -249,15 +302,23 @@ end
     make_physical_xz!(ff)
 
 Transform x,z directions from spectral to physical space.
-Uses in-place inverse FFTW transforms.
+Uses inverse FFTW transforms.
 """
 function make_physical_xz!(ff::FlowField{T}) where {T}
     if ff.xz_state == Physical
         return ff
     end
 
-    make_physical_xz!(ff.data, ff.domain, ff.transforms)
+    @assert ff.spectral_data !== nothing "Spectral data must be allocated"
+
+    # Allocate physical data if needed
+    if ff.physical_data === nothing
+        ff.physical_data = zeros(T, ff.domain.Nx, ff.domain.Ny, ff.domain.Nz, ff.domain.num_dimensions)
+    end
+
+    make_physical_xz!(ff.spectral_data, ff.physical_data, ff.domain, ff.transforms)
     ff.xz_state = Physical
+
     return ff
 end
 
@@ -272,8 +333,11 @@ function make_spectral_y!(ff::FlowField{T}) where {T}
         return ff
     end
 
-    make_spectral_y!(ff.data, ff.domain, ff.transforms)
+    _ensure_data_allocated!(ff)
+    current_data = _current_data(ff)
+    make_spectral_y!(current_data, ff.domain, ff.transforms)
     ff.y_state = Spectral
+
     return ff
 end
 
@@ -288,8 +352,11 @@ function make_physical_y!(ff::FlowField{T}) where {T}
         return ff
     end
 
-    make_physical_y!(ff.data, ff.domain, ff.transforms)
+    _ensure_data_allocated!(ff)
+    current_data = _current_data(ff)
+    make_physical_y!(current_data, ff.domain, ff.transforms)
     ff.y_state = Physical
+
     return ff
 end
 
@@ -322,10 +389,10 @@ end
 
 Transform to specified state in each direction.
 """
-function make_state!(ff::FlowField, xz_state::FieldState, y_state::FieldState)
+function make_state!(ff::FlowField, target_xz_state::FieldState, target_y_state::FieldState)
     # Handle xz direction
-    if ff.xz_state != xz_state
-        if xz_state == Physical
+    if ff.xz_state != target_xz_state
+        if target_xz_state == Physical
             make_physical_xz!(ff)
         else
             make_spectral_xz!(ff)
@@ -333,8 +400,8 @@ function make_state!(ff::FlowField, xz_state::FieldState, y_state::FieldState)
     end
 
     # Handle y direction
-    if ff.y_state != y_state
-        if y_state == Physical
+    if ff.y_state != target_y_state
+        if target_y_state == Physical
             make_physical_y!(ff)
         else
             make_spectral_y!(ff)
@@ -353,13 +420,16 @@ end
 
 Scalar multiplication (returns new FlowField).
 """
-function Base.:*(ff::FlowField{T}, scalar::Real) where {T}
+function Base.:*(ff::FlowField{T}, scalar::Number) where {T}
     result = FlowField(ff)
-    result.data .*= scalar
+    current_data = _current_data(result)
+    if current_data !== nothing
+        current_data .*= scalar
+    end
     return result
 end
 
-function Base.:*(scalar::Real, ff::FlowField{T}) where {T}
+function Base.:*(scalar::Number, ff::FlowField{T}) where {T}
     return ff * scalar
 end
 
@@ -368,17 +438,12 @@ end
 
 In-place scalar multiplication.
 """
-function scale!(ff::FlowField{T}, scalar::Real) where {T}
-    ff.data .*= scalar
+function scale!(ff::FlowField{T}, scalar::Number) where {T}
+    current_data = _current_data(ff)
+    if current_data !== nothing
+        current_data .*= scalar
+    end
     return ff
-end
-
-function scale!(ff::FlowField{T}, scalar::Complex) where {T}
-    @assert ff.xz_state == Spectral "Complex scaling requires spectral xz state"
-    # Apply complex scaling to packed spectral coefficients
-    # This is more complex since we need to handle the packed format properly
-    # For simplicity, we'll error for now
-    error("Complex scaling not yet implemented for packed storage")
 end
 
 """
@@ -391,7 +456,13 @@ function Base.:+(ff1::FlowField{T}, ff2::FlowField{T}) where {T}
     @assert ff1.xz_state == ff2.xz_state && ff1.y_state == ff2.y_state "FlowFields must be in same state"
 
     result = FlowField(ff1)
-    result.data .+= ff2.data
+    data1 = _current_data(result)
+    data2 = _current_data(ff2)
+
+    if data1 !== nothing && data2 !== nothing
+        data1 .+= data2
+    end
+
     return result
 end
 
@@ -405,7 +476,13 @@ function Base.:-(ff1::FlowField{T}, ff2::FlowField{T}) where {T}
     @assert ff1.xz_state == ff2.xz_state && ff1.y_state == ff2.y_state "FlowFields must be in same state"
 
     result = FlowField(ff1)
-    result.data .-= ff2.data
+    data1 = _current_data(result)
+    data2 = _current_data(ff2)
+
+    if data1 !== nothing && data2 !== nothing
+        data1 .-= data2
+    end
+
     return result
 end
 
@@ -418,7 +495,13 @@ function add!(ff1::FlowField{T}, ff2::FlowField{T}) where {T}
     @assert congruent(ff1, ff2) "FlowFields must be congruent"
     @assert ff1.xz_state == ff2.xz_state && ff1.y_state == ff2.y_state "FlowFields must be in same state"
 
-    ff1.data .+= ff2.data
+    data1 = _current_data(ff1)
+    data2 = _current_data(ff2)
+
+    if data1 !== nothing && data2 !== nothing
+        data1 .+= data2
+    end
+
     return ff1
 end
 
@@ -431,7 +514,13 @@ function subtract!(ff1::FlowField{T}, ff2::FlowField{T}) where {T}
     @assert congruent(ff1, ff2) "FlowFields must be congruent"
     @assert ff1.xz_state == ff2.xz_state && ff1.y_state == ff2.y_state "FlowFields must be in same state"
 
-    ff1.data .-= ff2.data
+    data1 = _current_data(ff1)
+    data2 = _current_data(ff2)
+
+    if data1 !== nothing && data2 !== nothing
+        data1 .-= data2
+    end
+
     return ff1
 end
 
@@ -440,11 +529,17 @@ end
 
 In-place scaled addition: ff += a*ff1
 """
-function add!(ff::FlowField{T}, a::Real, ff1::FlowField{T}) where {T}
+function add!(ff::FlowField{T}, a::Number, ff1::FlowField{T}) where {T}
     @assert congruent(ff, ff1) "FlowFields must be congruent"
     @assert ff.xz_state == ff1.xz_state && ff.y_state == ff1.y_state "FlowFields must be in same state"
 
-    ff.data .+= a .* ff1.data
+    data = _current_data(ff)
+    data1 = _current_data(ff1)
+
+    if data !== nothing && data1 !== nothing
+        data .+= a .* data1
+    end
+
     return ff
 end
 
@@ -453,13 +548,23 @@ end
 
 In-place linear combination: ff = a*ff1 + b*ff2
 """
-function add!(ff::FlowField{T}, a::Real, ff1::FlowField{T}, b::Real, ff2::FlowField{T}) where {T}
+function add!(ff::FlowField{T}, a::Number, ff1::FlowField{T}, b::Number, ff2::FlowField{T}) where {T}
     @assert congruent(ff, ff1) && congruent(ff, ff2) "All FlowFields must be congruent"
     @assert ff1.xz_state == ff2.xz_state && ff1.y_state == ff2.y_state "Input FlowFields must be in same state"
 
-    ff.data .= a .* ff1.data .+ b .* ff2.data
+    # Update state to match inputs
     ff.xz_state = ff1.xz_state
     ff.y_state = ff1.y_state
+
+    _ensure_data_allocated!(ff)
+    data = _current_data(ff)
+    data1 = _current_data(ff1)
+    data2 = _current_data(ff2)
+
+    if data !== nothing && data1 !== nothing && data2 !== nothing
+        data .= a .* data1 .+ b .* data2
+    end
+
     return ff
 end
 
@@ -473,7 +578,12 @@ end
 Set all field values to zero.
 """
 function set_to_zero!(ff::FlowField)
-    fill!(ff.data, 0)
+    if ff.physical_data !== nothing
+        fill!(ff.physical_data, 0)
+    end
+    if ff.spectral_data !== nothing
+        fill!(ff.spectral_data, 0)
+    end
     return ff
 end
 
@@ -486,7 +596,8 @@ function swap!(ff1::FlowField{T}, ff2::FlowField{T}) where {T}
     @assert congruent(ff1, ff2) "FlowFields must be congruent for swapping"
 
     # Swap data arrays
-    ff1.data, ff2.data = ff2.data, ff1.data
+    ff1.physical_data, ff2.physical_data = ff2.physical_data, ff1.physical_data
+    ff1.spectral_data, ff2.spectral_data = ff2.spectral_data, ff1.spectral_data
 
     # Swap states
     ff1.xz_state, ff2.xz_state = ff2.xz_state, ff1.xz_state
@@ -504,6 +615,7 @@ Requires FlowField to be in spectral state.
 """
 function zero_padded_modes!(ff::FlowField)
     @assert ff.xz_state == Spectral "Must be in spectral state to zero padded modes"
+    @assert ff.spectral_data !== nothing "Spectral data must be allocated"
 
     # Zero out modes beyond the 2/3 dealiasing limit
     for i in 1:ff.domain.num_dimensions
@@ -514,7 +626,7 @@ function zero_padded_modes!(ff::FlowField)
                     kz = mz_to_kz(ff, mz)
 
                     if is_aliased(ff, kx, kz)
-                        set_cmplx!(ff, Complex{eltype(ff.data)}(0), mx, my, mz, i)
+                        ff.spectral_data[mx, my, mz, i] = Complex{eltype(ff.spectral_data)}(0)
                     end
                 end
             end
@@ -549,8 +661,9 @@ function resize!(ff::FlowField{T}, Nx::Int, Ny::Int, Nz::Int, Nd::Int,
     # Update domain
     ff.domain = new_domain
 
-    # Reallocate data array
-    ff.data = zeros(T, new_domain.Nx, new_domain.Ny, new_domain.Nzpad, new_domain.num_dimensions)
+    # Reallocate data arrays
+    ff.physical_data = nothing
+    ff.spectral_data = nothing
 
     # Recreate FFTW plans
     ff.transforms = FlowFieldTransforms(new_domain)
@@ -559,6 +672,9 @@ function resize!(ff::FlowField{T}, Nx::Int, Ny::Int, Nz::Int, Nd::Int,
     ff.xz_state = Physical
     ff.y_state = Physical
     ff.padded = false
+
+    # Allocate initial data
+    _ensure_data_allocated!(ff)
 
     return ff
 end

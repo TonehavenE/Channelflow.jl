@@ -5,6 +5,13 @@ Defines the FlowFieldDomain type that stores all grid and domain parameters
 for spectral flow field computations.
 """
 
+export FlowFieldDomain, x_coord, y_coord, z_coord,
+    x_gridpoints, y_gridpoints, z_gridpoints,
+    kx_range, kz_range, kx_to_mx, mx_to_kx,
+    kz_to_mz, mz_to_kz, kx_max_dealiased,
+    kz_max_dealiased, is_aliased,
+    geom_congruent, congruent
+
 """
 Stores domain parameters for FlowField.
 

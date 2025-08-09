@@ -6,6 +6,7 @@ Implements Fourier transforms in x,z directions and Chebyshev transforms in y di
 """
 
 using FFTW
+using AbstractFFTs
 
 """
 Stores FFTW plans and scratch arrays for FlowField transforms.
@@ -16,11 +17,11 @@ The transforms handle:
 """
 mutable struct FlowFieldTransforms{T<:Real}
     # FFTW plans for x,z transforms
-    xz_plan::Union{FFTW.rFFTWPlan,Nothing}        # Real -> Complex (forward)
-    xz_inverse_plan::Union{FFTW.rFFTWPlan,Nothing} # Complex -> Real (inverse)
+    xz_plan::Union{AbstractFFTs.Plan,Nothing,FFTW.r2rFFTWPlan}        # Real -> Complex (forward)
+    xz_inverse_plan::Union{AbstractFFTs.Plan,Nothing,FFTW.r2rFFTWPlan} # Complex -> Real (inverse)
 
-    # FFTW plan for y transforms  
-    y_plan::Union{FFTW.rFFTWPlan,Nothing}         # DCT-I for Chebyshev
+    # FFTW plan for y transforms
+    y_plan::Union{AbstractFFTs.Plan,Nothing,FFTW.r2rFFTWPlan}         # DCT-I for Chebyshev
 
     # Scratch arrays
     y_scratch::Vector{T}  # 1D scratch space for y transforms
@@ -42,21 +43,21 @@ function FlowFieldTransforms(domain::FlowFieldDomain{T}) where {T}
 
     if domain.Nx > 0 && domain.Nz > 0
         # Create sample arrays for FFTW planning
-        # Real array: [nx, ny, nz, i] but we only use non-padded z dimension for input
-        sample_real = zeros(T, domain.Nx, domain.Ny, domain.Nz, domain.num_dimensions)
-
-        # For planning the forward transform (real to complex)
-        # FFTW expects the output to have size [Nx, Ny, Mz, num_dimensions]
-        sample_complex = zeros(Complex{T}, domain.Nx, domain.Ny, domain.Mz, domain.num_dimensions)
+        sample_physical = zeros(T, domain.Nx, domain.Ny, domain.Nz, domain.num_dimensions)
+        sample_spectral = zeros(Complex{T}, domain.Mx, domain.My, domain.Mz, domain.num_dimensions)
 
         # Create xz transforms
         # Transform over dimensions (1,3) = (x,z) for each (y,i)
-        xz_plan = plan_rfft(sample_real, (1, 3); flags=FFTW.MEASURE)
-        xz_inverse_plan = plan_irfft(sample_complex, domain.Nz, (1, 3); flags=FFTW.MEASURE)
+        xz_plan = plan_rfft(sample_physical, (1, 3); flags=FFTW.MEASURE)
+        # println("The size of sample_spectral is: $(size(sample_spectral))")
+        # println("The domain is: $(domain)")
+        # println("size(sample_spectral, 1): $(size(sample_spectral, 1))")
+        # println("and div(2(domain.Mz - 1), 2) + 1 is $(div(2(domain.Mz - 1), 2) + 1)")
+        xz_inverse_plan = plan_irfft(sample_spectral, 2(domain.Nx - 1), (1, 3); flags=FFTW.MEASURE)
 
         # Y transform: DCT-I (REDFT00) for Chebyshev polynomials
         if domain.Ny >= 2
-            y_plan = plan_r2r!(y_scratch, FFTW.REDFT00; flags=FFTW.MEASURE)
+            y_plan = FFTW.plan_r2r!(y_scratch, FFTW.REDFT00; flags=FFTW.MEASURE)
         end
     end
 
@@ -68,105 +69,50 @@ end
 # ===========================
 
 """
-    make_spectral_xz!(data, domain, transforms)
+    make_spectral_xz!(physical_data, spectral_data, domain, transforms)
 
 Transform x,z directions from physical to spectral space using real-to-complex FFT.
-The data array is modified in-place, reinterpreting real storage as complex.
 
-Input:  data stores real values u(x,y,z,i)
-Output: data stores complex coefficients û(kx,y,kz,i) in packed format
+Input:  physical_data[Nx, Ny, Nz, num_dimensions] - real values u(x,y,z,i)
+Output: spectral_data[Mx, My, Mz, num_dimensions] - complex coefficients û(kx,y,kz,i)
 """
-function make_spectral_xz!(data::Array{T,4}, domain::FlowFieldDomain{T},
-    transforms::FlowFieldTransforms{T}) where {T}
+function make_spectral_xz!(physical_data::Array{T,4}, spectral_data::Array{Complex{T},4},
+    domain::FlowFieldDomain{T}, transforms::FlowFieldTransforms{T}) where {T}
 
     if transforms.xz_plan === nothing
         error("XZ transform plan not initialized")
     end
 
-    # Extract the unpadded portion for input to FFTW
-    # data is [Nx, Ny, Nzpad, num_dimensions] but we only want [Nx, Ny, Nz, num_dimensions]
-    input_data = view(data, :, :, 1:domain.Nz, :)
-
     # Perform forward FFT: real -> complex
-    # Result has size [Nx, Ny, Mz, num_dimensions] with Mz = Nz/2+1
-    complex_result = transforms.xz_plan * input_data
-
-    # Now we need to pack the complex result back into the real array
-    # FFTW packs complex numbers as [real, imag, real, imag, ...]
-    # So data[ix, iy, 2*iz-1] = real part, data[ix, iy, 2*iz] = imag part
-
-    for i in 1:domain.num_dimensions
-        for ny in 1:domain.Ny
-            for mx in 1:domain.Nx
-                for mz in 1:domain.Mz
-                    z_real_idx = 2 * mz - 1  # Real part index
-                    z_imag_idx = 2 * mz      # Imaginary part index
-
-                    if z_real_idx <= domain.Nzpad
-                        data[mx, ny, z_real_idx, i] = real(complex_result[mx, ny, mz, i])
-                    end
-                    if z_imag_idx <= domain.Nzpad
-                        data[mx, ny, z_imag_idx, i] = imag(complex_result[mx, ny, mz, i])
-                    end
-                end
-            end
-        end
-    end
+    # FFTW transforms over dimensions (1,3) = (x,z) for each (y,i)
+    spectral_data .= transforms.xz_plan * physical_data
 
     # Apply FFTW normalization (forward transform)
     scale_factor = T(1) / (domain.Nx * domain.Nz)
-    data .*= scale_factor
+    spectral_data .*= scale_factor
 
-    return data
+    return spectral_data
 end
 
 """
-    make_physical_xz!(data, domain, transforms) 
+    make_physical_xz!(spectral_data, physical_data, domain, transforms) 
 
 Transform x,z directions from spectral to physical space using complex-to-real FFT.
-The data array is modified in-place, reinterpreting packed complex as real values.
 
-Input:  data stores complex coefficients û(kx,y,kz,i) in packed format  
-Output: data stores real values u(x,y,z,i)
+Input:  spectral_data[Mx, My, Mz, num_dimensions] - complex coefficients û(kx,y,kz,i)
+Output: physical_data[Nx, Ny, Nz, num_dimensions] - real values u(x,y,z,i)
 """
-function make_physical_xz!(data::Array{T,4}, domain::FlowFieldDomain{T},
-    transforms::FlowFieldTransforms{T}) where {T}
+function make_physical_xz!(spectral_data::Array{Complex{T},4}, physical_data::Array{T,4},
+    domain::FlowFieldDomain{T}, transforms::FlowFieldTransforms{T}) where {T}
 
     if transforms.xz_inverse_plan === nothing
         error("XZ inverse transform plan not initialized")
     end
 
-    # Unpack the complex data from real storage
-    complex_input = zeros(Complex{T}, domain.Nx, domain.Ny, domain.Mz, domain.num_dimensions)
-
-    for i in 1:domain.num_dimensions
-        for ny in 1:domain.Ny
-            for mx in 1:domain.Nx
-                for mz in 1:domain.Mz
-                    z_real_idx = 2 * mz - 1
-                    z_imag_idx = 2 * mz
-
-                    real_part = (z_real_idx <= domain.Nzpad) ? data[mx, ny, z_real_idx, i] : T(0)
-                    imag_part = (z_imag_idx <= domain.Nzpad) ? data[mx, ny, z_imag_idx, i] : T(0)
-
-                    complex_input[mx, ny, mz, i] = Complex{T}(real_part, imag_part)
-                end
-            end
-        end
-    end
-
     # Perform inverse FFT: complex -> real
-    real_result = transforms.xz_inverse_plan * complex_input
+    physical_data .= transforms.xz_inverse_plan * spectral_data
 
-    # Copy result back to data array (only the unpadded portion)
-    data[:, :, 1:domain.Nz, :] .= real_result
-
-    # Zero out the padded region
-    if domain.Nzpad > domain.Nz
-        data[:, :, (domain.Nz+1):domain.Nzpad, :] .= 0
-    end
-
-    return data
+    return physical_data
 end
 
 # ===========================
@@ -179,11 +125,13 @@ end
 Transform y direction from physical to spectral space using Chebyshev transform.
 This uses DCT-I (Discrete Cosine Transform type I) with proper normalization.
 
+Works on either real or complex data arrays.
+
 Input:  data contains values at Chebyshev-Gauss-Lobatto points
 Output: data contains Chebyshev polynomial coefficients
 """
 function make_spectral_y!(data::Array{T,4}, domain::FlowFieldDomain{T},
-    transforms::FlowFieldTransforms{T}) where {T}
+    transforms::FlowFieldTransforms{T}) where {T<:Real}
 
     if domain.Ny < 2
         return data  # Trivial case
@@ -197,11 +145,11 @@ function make_spectral_y!(data::Array{T,4}, domain::FlowFieldDomain{T},
     # Data layout: [nx, ny, nz, i] - we transform over ny dimension
 
     for i in 1:domain.num_dimensions
-        for nz in 1:domain.Nzpad  # Include padded region
-            for nx in 1:domain.Nx
+        for nz in 1:size(data, 3)  # Handle both Nz and Mz cases
+            for nx in 1:size(data, 1)  # Handle both Nx and Mx cases
                 # Copy y-profile to scratch array
                 for ny in 1:domain.Ny
-                    transforms.y_scratch[ny] = data[nx, ny, nz, i]
+                    transforms.y_scratch[ny] = real(data[nx, ny, nz, i])
                 end
 
                 # Perform DCT-I transform
@@ -226,17 +174,85 @@ function make_spectral_y!(data::Array{T,4}, domain::FlowFieldDomain{T},
     return data
 end
 
+function make_spectral_y!(data::Array{Complex{T},4}, domain::FlowFieldDomain{T},
+    transforms::FlowFieldTransforms{T}) where {T<:Real}
+
+    if domain.Ny < 2
+        return data  # Trivial case
+    end
+
+    if transforms.y_plan === nothing
+        error("Y transform plan not initialized")
+    end
+
+    # Transform each y-profile separately for complex data
+    # We need to handle real and imaginary parts separately
+
+    for i in 1:domain.num_dimensions
+        for nz in 1:size(data, 3)
+            for nx in 1:size(data, 1)
+                # Transform real part
+                for ny in 1:domain.Ny
+                    transforms.y_scratch[ny] = real(data[nx, ny, nz, i])
+                end
+
+                transforms.y_plan * transforms.y_scratch
+
+                nrm = T(1) / (domain.Ny - 1)
+                real_0 = 0.5 * nrm * transforms.y_scratch[1]
+                real_end = 0.5 * nrm * transforms.y_scratch[domain.Ny]
+
+                # Transform imaginary part
+                for ny in 1:domain.Ny
+                    transforms.y_scratch[ny] = imag(data[nx, ny, nz, i])
+                end
+
+                transforms.y_plan * transforms.y_scratch
+
+                imag_0 = 0.5 * nrm * transforms.y_scratch[1]
+                imag_end = 0.5 * nrm * transforms.y_scratch[domain.Ny]
+
+                # Combine and store results
+                data[nx, 1, nz, i] = Complex{T}(real_0, imag_0)
+
+                for ny in 2:(domain.Ny-1)
+                    # Recompute for middle coefficients
+                    for ny2 in 1:domain.Ny
+                        transforms.y_scratch[ny2] = real(data[nx, ny2, nz, i])
+                    end
+                    transforms.y_plan * transforms.y_scratch
+                    real_part = nrm * transforms.y_scratch[ny]
+
+                    for ny2 in 1:domain.Ny
+                        transforms.y_scratch[ny2] = imag(data[nx, ny2, nz, i])
+                    end
+                    transforms.y_plan * transforms.y_scratch
+                    imag_part = nrm * transforms.y_scratch[ny]
+
+                    data[nx, ny, nz, i] = Complex{T}(real_part, imag_part)
+                end
+
+                data[nx, domain.Ny, nz, i] = Complex{T}(real_end, imag_end)
+            end
+        end
+    end
+
+    return data
+end
+
 """
     make_physical_y!(data, domain, transforms)
 
 Transform y direction from spectral to physical space using inverse Chebyshev transform.
 This uses DCT-I with inverse normalization.
 
+Works on either real or complex data arrays.
+
 Input:  data contains Chebyshev polynomial coefficients  
 Output: data contains values at Chebyshev-Gauss-Lobatto points
 """
 function make_physical_y!(data::Array{T,4}, domain::FlowFieldDomain{T},
-    transforms::FlowFieldTransforms{T}) where {T}
+    transforms::FlowFieldTransforms{T}) where {T<:Real}
 
     if domain.Ny < 2
         return data  # Trivial case  
@@ -248,17 +264,17 @@ function make_physical_y!(data::Array{T,4}, domain::FlowFieldDomain{T},
 
     # Transform each y-profile separately
     for i in 1:domain.num_dimensions
-        for nz in 1:domain.Nzpad
-            for nx in 1:domain.Nx
+        for nz in 1:size(data, 3)
+            for nx in 1:size(data, 1)
                 # Copy y-profile to scratch with inverse normalization
                 # See original C++ code: undo the endpoint scaling
-                transforms.y_scratch[1] = data[nx, 1, nz, i]
+                transforms.y_scratch[1] = real(data[nx, 1, nz, i])
 
                 for ny in 2:(domain.Ny-1)
-                    transforms.y_scratch[ny] = 0.5 * data[nx, ny, nz, i]
+                    transforms.y_scratch[ny] = 0.5 * real(data[nx, ny, nz, i])
                 end
 
-                transforms.y_scratch[domain.Ny] = data[nx, domain.Ny, nz, i]
+                transforms.y_scratch[domain.Ny] = real(data[nx, domain.Ny, nz, i])
 
                 # Perform inverse DCT-I transform (same as forward for DCT-I)
                 transforms.y_plan * transforms.y_scratch
@@ -274,22 +290,52 @@ function make_physical_y!(data::Array{T,4}, domain::FlowFieldDomain{T},
     return data
 end
 
-# ===========================
-# Utility Functions
-# ===========================
+function make_physical_y!(data::Array{Complex{T},4}, domain::FlowFieldDomain{T},
+    transforms::FlowFieldTransforms{T}) where {T<:Real}
 
-"""
-    optimize_plans!(transforms; flags=FFTW.PATIENT)
+    if domain.Ny < 2
+        return data  # Trivial case  
+    end
 
-Re-optimize FFTW plans with different flags (e.g., FFTW.PATIENT for better performance).
-"""
-function optimize_plans!(transforms::FlowFieldTransforms{T}, domain::FlowFieldDomain{T};
-    flags=FFTW.PATIENT) where {T}
+    if transforms.y_plan === nothing
+        error("Y transform plan not initialized")
+    end
 
-    # This would recreate the plans with different optimization flags
-    # For now, we'll leave the implementation as a stub since it requires
-    # recreating all the sample arrays and plans
+    # Transform each y-profile separately for complex data
+    for i in 1:domain.num_dimensions
+        for nz in 1:size(data, 3)
+            for nx in 1:size(data, 1)
+                # Transform real part
+                transforms.y_scratch[1] = real(data[nx, 1, nz, i])
 
-    @warn "Plan optimization not yet implemented"
-    return transforms
+                for ny in 2:(domain.Ny-1)
+                    transforms.y_scratch[ny] = 0.5 * real(data[nx, ny, nz, i])
+                end
+
+                transforms.y_scratch[domain.Ny] = real(data[nx, domain.Ny, nz, i])
+
+                transforms.y_plan * transforms.y_scratch
+
+                real_result = copy(transforms.y_scratch)
+
+                # Transform imaginary part
+                transforms.y_scratch[1] = imag(data[nx, 1, nz, i])
+
+                for ny in 2:(domain.Ny-1)
+                    transforms.y_scratch[ny] = 0.5 * imag(data[nx, ny, nz, i])
+                end
+
+                transforms.y_scratch[domain.Ny] = imag(data[nx, domain.Ny, nz, i])
+
+                transforms.y_plan * transforms.y_scratch
+
+                # Combine results
+                for ny in 1:domain.Ny
+                    data[nx, ny, nz, i] = Complex{T}(real_result[ny], transforms.y_scratch[ny])
+                end
+            end
+        end
+    end
+
+    return data
 end
