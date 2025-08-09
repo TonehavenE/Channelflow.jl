@@ -182,7 +182,11 @@ function kx_to_mx(domain::FlowFieldDomain, kx::Int)
     kx_min = -div(domain.Nx, 2) + 1
     kx_max = div(domain.Nx, 2)
     @assert kx_min <= kx <= kx_max "kx out of range"
-    return kx >= 0 ? kx + 1 : kx + domain.Nx + 1
+    if -div(domain.Mx, 2) + 1 <= kx && kx < 0
+        return kx + domain.Mx + 1
+    elseif 0 <= kx <= div(domain.Mx, 2)
+        return kx + 1
+    end
 end
 
 """
