@@ -44,16 +44,16 @@ function FlowFieldTransforms(domain::FlowFieldDomain{T}) where {T}
     if domain.Nx > 0 && domain.Nz > 0
         # Create sample arrays for FFTW planning
         sample_physical = zeros(T, domain.Nx, domain.Ny, domain.Nz, domain.num_dimensions)
-        sample_spectral = zeros(Complex{T}, domain.Mx, domain.My, domain.Mz, domain.num_dimensions)
+        sample_spectral = zeros(Complex{T}, domain.Nx, domain.My, domain.Mz, domain.num_dimensions)
 
         # Create xz transforms
         # Transform over dimensions (1,3) = (x,z) for each (y,i)
-        xz_plan = plan_rfft(sample_physical, (1, 3); flags=FFTW.MEASURE)
+        xz_plan = plan_rfft(sample_physical, (3, 1); flags=FFTW.MEASURE)
         # println("The size of sample_spectral is: $(size(sample_spectral))")
         # println("The domain is: $(domain)")
         # println("size(sample_spectral, 1): $(size(sample_spectral, 1))")
         # println("and div(2(domain.Mz - 1), 2) + 1 is $(div(2(domain.Mz - 1), 2) + 1)")
-        xz_inverse_plan = plan_irfft(sample_spectral, 2(domain.Nx - 1), (1, 3); flags=FFTW.MEASURE)
+        xz_inverse_plan = plan_irfft(sample_spectral, domain.Nz, (3, 1); flags=FFTW.MEASURE)
 
         # Y transform: DCT-I (REDFT00) for Chebyshev polynomials
         if domain.Ny >= 2
@@ -88,7 +88,7 @@ function make_spectral_xz!(physical_data::Array{T,4}, spectral_data::Array{Compl
     spectral_data .= transforms.xz_plan * physical_data
 
     # Apply FFTW normalization (forward transform)
-    scale_factor = T(1) / (domain.Nx * domain.Nz)
+    scale_factor = T(1) # / (domain.Nx * domain.Nz) # hmm, no longer needed...
     spectral_data .*= scale_factor
 
     return spectral_data
