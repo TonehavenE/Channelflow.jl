@@ -7,4 +7,5 @@ using Test
     include("chebyshev_tests.jl")
     include("flowfielddomain_tests.jl")
     include("flowfield_tests.jl")
+    include("metrics/metric_tests.jl")
 end
