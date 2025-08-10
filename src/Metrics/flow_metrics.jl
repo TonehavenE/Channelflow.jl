@@ -136,3 +136,52 @@ L2Norm(ff, normalize) = sqrt(L2Norm2(ff, normalize))
 function L2Norm(ff::FlowField, normalize::Bool=true)
     return sqrt(L2Norm2(ff, normalize))
 end
+
+"""
+    L2Dist2(ff, gg, normalize)
+
+Calculates the L2 distance squared between two FlowFields.
+"""
+function L2Dist2(ff::FlowField, gg::FlowField, normalize::Bool=true)
+    @assert congruent(ff, gg) "FlowFields must be congruent for distance calculation"
+    @assert xz_state(ff) == Spectral && xz_state(gg) == Spectral "FlowFields must be in Spectral xz state for spectral access"
+    @assert y_state(ff) == Spectral && y_state(gg) == Spectral "FlowFields must be in Spectral y state for spectral access"
+
+    sum = 0.0
+
+    difference = ChebyCoeff{Complex}(num_y_modes(ff), domain_a(ff), domain_b(ff), Spectral)
+
+    dealiased = ff.padded && gg.padded
+
+    kxmin = dealiased ? -kx_max_dealiased(ff) : kx_min(ff)
+    kxmax = dealiased ? kx_max_dealiased(ff) : kx_max(ff)
+    kzmin = dealiased ? -kz_max_dealiased(ff) : kz_min(ff)
+    kzmax = dealiased ? kz_max_dealiased(ff) : kz_max(ff)
+
+    for i = 1:num_dimensions(ff), kx = kxmin:kxmax
+        mx = kx_to_mx(ff, kx)
+        cz = 1
+        for kz = kzmin:kzmax
+            mz = kz_to_mz(ff, kz)
+            for my = 1:num_y_modes(ff)
+                difference[my] = cmplx(ff, mx, my, mz, i) - cmplx(gg, mx, my, mz, i)
+            end
+            sum += cz * L2Norm2(difference, normalize)
+            cz = 2
+        end
+    end
+    if !normalize
+        sum *= Lx(ff) * Lz(ff)
+    end
+
+    return sum
+end
+
+"""
+    L2Dist(ff::FlowField, gg::FlowField, normalize::Bool=true)
+
+Calculates the L2 distance between two FlowFields.
+"""
+function L2Dist(ff::FlowField, gg::FlowField, normalize::Bool=true)
+    return sqrt(L2Dist2(ff, gg, normalize))
+end

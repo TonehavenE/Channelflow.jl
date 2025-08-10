@@ -7,6 +7,8 @@ Define generics to be implemented. Prevents namespace clashing.
 function L2Norm2 end
 function L2Norm end
 function L2InnerProduct end
+function L2Dist2 end
+function L2Dist end
 
 function chebyNorm2 end
 function chebyNorm end
