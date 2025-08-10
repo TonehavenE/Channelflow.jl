@@ -3,11 +3,11 @@ using Channelflow
 using LinearAlgebra
 
 @testset "BandedTridiag tests" begin
-    N = 8
-
-    # test constructors 
-
     @testset "Constructors and Basics" begin
+        #=
+        Basic checks on the BandedTridiag constructor.
+        Ensures that it creates a matrix of the right type and size, and that it initializes correctly.
+        =#
         A = BandedTridiag(N)
         B = BandedTridiag{Rational}(N)
 
@@ -24,10 +24,16 @@ using LinearAlgebra
     end
 
 
-    # test accessors and getters
     @testset "Accessors and Getters" begin
+        #=
+        Test the accessors and getters for the BandedTridiag matrix.
+        The idea is to set the diagonals and first row with distinct values,
+        then check that the accessors return the expected values.
+        =#
         N = 64
         A = BandedTridiag(N)
+
+        # Populate A with distinct elements on each diagonal
         for i = 1:N
             set_first_row!(A, i, Float64(i))
             set_main_diag!(A, i, Float64(i^2))
@@ -41,7 +47,7 @@ using LinearAlgebra
             @test lower_diag(A, i) == i^4
         end
 
-
+        # Verify that we get out of bound errors for each of the following:
         for out_of_bounds in [-100, -1, N + 1]
             @test_throws BoundsError set_first_row!(A, out_of_bounds, 0.0)
             @test_throws BoundsError set_main_diag!(A, out_of_bounds, 0.0)
@@ -53,6 +59,7 @@ using LinearAlgebra
             @test_throws BoundsError upper_diag(A, out_of_bounds)
         end
 
+        # Verify we can't index by strs or floats
         for bad_type in [-100.1, 1 / 4, true, "str", 1.11]
             @test_throws MethodError set_first_row!(A, bad_type, 0.0)
             @test_throws MethodError set_main_diag!(A, bad_type, 0.0)
@@ -64,23 +71,28 @@ using LinearAlgebra
             @test_throws MethodError upper_diag(A, bad_type)
         end
 
-        # direct indexing 
+        # Direct indexing
         for i = 2:N-1 # all should be valid, edge cases handled below
             @test A[i, i] == main_diag(A, i)
             @test A[i, i+1] == upper_diag(A, i)
             @test A[i, i-1] == lower_diag(A, i)
         end
 
+        # Boundaries
         @test A[2, 1] == lower_diag(A, 2)
         @test A[N-1, N] == upper_diag(A, N - 1)
 
+        # Out of bounds
         @test_throws BoundsError A[1, 0]
         @test_throws BoundsError A[N, N+1]
         @test_throws BoundsError A[N+1, N]
     end
 
-    # test decomposition 
     @testset "LU Decomposition and Solving" begin
+        """
+        This function performs a suite of tests on a single matrix A of type BandedTridiag{T}.
+        It checks the correctness of the LU decomposition and the solution of linear systems.
+        """
         function test_UL_decomposition(A::BandedTridiag{T}) where {T<:Number}
             # -- Test decomposition --
             A_orig = to_dense(A)
@@ -139,11 +151,12 @@ using LinearAlgebra
                 println("Comparison to LinearAlgebra SKIPPED ($(typeof(e)))")
             end
         end
+
+        # Construct various matrices to test with the function.
         T = Float64
         A = BandedTridiag{T}(6)
 
-        # construct a matrix A
-        # band first, alternating pattern
+        # Populate A's band, alternating pattern
         for j = 1:6
             A[1, j] = j % 2 == 1 ? 1.0 : -1.0
         end
@@ -161,7 +174,7 @@ using LinearAlgebra
         end
         test_UL_decomposition(A)
 
-        # test on random matrices
+        # Test on random matrices
         num_tests = 10
         for i = 1:num_tests
             n = rand(4:8)  # Random size
@@ -186,7 +199,7 @@ using LinearAlgebra
             test_UL_decomposition(A)
         end
 
-        # -- edge cases --
+        # -- Edge cases --
 
         # Small matrices
         A1 = BandedTridiag(1)
@@ -209,7 +222,6 @@ using LinearAlgebra
             A3[i, i] = 1.0
         end  # Diagonal ones
         test_UL_decomposition(A3)
-
     end
 
     @testset "Matrix-Vector Multiplication" begin
@@ -266,6 +278,4 @@ using LinearAlgebra
             @test b_strided ≈ b_expected atol = 1e-10
         end
     end
-
-    # test multiply
 end
