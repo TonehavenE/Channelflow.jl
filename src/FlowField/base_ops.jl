@@ -2,6 +2,8 @@
 Defines basic arithmetic operations for FlowField structures. Should be included after types_and_constructors.jl.
 =#
 
+using Printf
+
 export scale!, add!, subtract!, add!, set_to_zero!
 
 
@@ -166,4 +168,27 @@ function add!(
     end
 
     return ff
+end
+
+function Base.display(ff::FlowField)
+    println("FlowField:")
+    println("  Domain: ", ff.domain)
+    println("  XZ State: ", ff.xz_state)
+    println("  Y State: ", ff.y_state)
+    println("  Vector Dimension: ", vector_dim(ff))
+    if ff.spectral_data !== nothing
+        println("  Spectral Data Size: ", size(ff.spectral_data))
+    else
+        println("  Spectral Data: Not allocated")
+    end
+
+    if xz_state(ff) == Spectral
+        for i = 1:num_dimensions(ff), mx = 1:num_x_modes(ff), my = 1:num_y_modes(ff), mz = 1:num_z_modes(ff)
+            @printf("  i=%d mx=%d my=%d mz=%d: %8.3f + %8.3f i\n", i, mx, my, mz, real(cmplx(ff, mx, my, mz, i)), imag(cmplx(ff, mx, my, mz, i)))
+        end
+    else
+        for i = 1:num_dimensions(ff), nx = 1:num_x_gridpoints(ff), ny = 1:num_y_gridpoints(ff), nz = 1:num_z_gridpoints(ff)
+            println("  i=$i ny=$ny nx=$nx nz=$nz: ", ff[nx, ny, nz, i])
+        end
+    end
 end
