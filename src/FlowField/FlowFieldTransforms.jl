@@ -52,17 +52,17 @@ function FlowFieldTransforms(domain::FlowFieldDomain{T}) where {T}
 
         # Create xz transforms
         # Transform over dimensions (1,3) = (x,z) for each (y,i)
-        xz_plan = plan_rfft(sample_physical, (3, 1); flags = FFTW.MEASURE)
+        xz_plan = plan_rfft(sample_physical, (3, 1); flags=FFTW.MEASURE)
         # println("The size of sample_spectral is: $(size(sample_spectral))")
         # println("The domain is: $(domain)")
         # println("size(sample_spectral, 1): $(size(sample_spectral, 1))")
         # println("and div(2(domain.Mz - 1), 2) + 1 is $(div(2(domain.Mz - 1), 2) + 1)")
         xz_inverse_plan =
-            plan_irfft(sample_spectral, domain.Nz, (3, 1); flags = FFTW.MEASURE)
+            plan_irfft(sample_spectral, domain.Nz, (3, 1); flags=FFTW.MEASURE)
 
         # Y transform: DCT-I (REDFT00) for Chebyshev polynomials
         if domain.Ny >= 2
-            y_plan = FFTW.plan_r2r!(y_scratch, FFTW.REDFT00; flags = FFTW.MEASURE)
+            y_plan = FFTW.plan_r2r!(y_scratch, FFTW.REDFT00; flags=FFTW.MEASURE)
         end
     end
 
@@ -97,7 +97,7 @@ function make_spectral_xz!(
     spectral_data .= transforms.xz_plan * physical_data
 
     # Apply FFTW normalization (forward transform)
-    scale_factor = T(1) # / (domain.Nx * domain.Nz) # hmm, no longer needed...
+    scale_factor = T(1) / (domain.Nx * domain.Nz) # hmm, no longer needed...
     spectral_data .*= scale_factor
 
     return spectral_data
@@ -124,6 +124,8 @@ function make_physical_xz!(
 
     # Perform inverse FFT: complex -> real
     physical_data .= transforms.xz_inverse_plan * spectral_data
+    scale_factor = T(domain.Nx * domain.Nz)
+    physical_data .*= scale_factor
 
     return physical_data
 end
@@ -148,40 +150,33 @@ function make_spectral_y!(
     domain::FlowFieldDomain{T},
     transforms::FlowFieldTransforms{T},
 ) where {T<:Real}
-
     if domain.Ny < 2
-        return data  # Trivial case
+        return data
     end
 
     if transforms.y_plan === nothing
         error("Y transform plan not initialized")
     end
 
-    # Transform each y-profile separately
-    # Data layout: [nx, ny, nz, i] - we transform over ny dimension
+    nrm = T(1) / (domain.Ny - 1)
 
+    # Transform each y-profile separately
     for i = 1:domain.num_dimensions
-        for nz = 1:size(data, 3)  # Handle both Nz and Mz cases
-            for nx = 1:size(data, 1)  # Handle both Nx and Mx cases
+        for nz = 1:size(data, 3)
+            for nx = 1:size(data, 1)
                 # Copy y-profile to scratch array
                 for ny = 1:domain.Ny
-                    transforms.y_scratch[ny] = real(data[nx, ny, nz, i])
+                    transforms.y_scratch[ny] = data[nx, ny, nz, i]
                 end
 
                 # Perform DCT-I transform
                 transforms.y_plan * transforms.y_scratch
 
-                # Apply Chebyshev normalization and copy back
-                # See original C++ code: special handling for endpoints
-                nrm = T(1) / (domain.Ny - 1)
-
-                # Endpoint normalization (0th and last coefficients get factor of 1/2)
+                # Copy back with normalization (matching C++ exactly)
                 data[nx, 1, nz, i] = 0.5 * nrm * transforms.y_scratch[1]
-
                 for ny = 2:(domain.Ny-1)
                     data[nx, ny, nz, i] = nrm * transforms.y_scratch[ny]
                 end
-
                 data[nx, domain.Ny, nz, i] = 0.5 * nrm * transforms.y_scratch[domain.Ny]
             end
         end
@@ -195,7 +190,6 @@ function make_spectral_y!(
     domain::FlowFieldDomain{T},
     transforms::FlowFieldTransforms{T},
 ) where {T<:Real}
-
     if domain.Ny < 2
         return data
     end
@@ -204,9 +198,9 @@ function make_spectral_y!(
         error("Y transform plan not initialized")
     end
 
-    # Transform each y-profile separately for complex data
-    # We need to handle real and imaginary parts separately
+    nrm = T(1) / (domain.Ny - 1)
 
+    # Transform each y-profile separately - handle real and imaginary parts separately
     for i = 1:domain.num_dimensions
         for nz = 1:size(data, 3)
             for nx = 1:size(data, 1)
@@ -217,8 +211,9 @@ function make_spectral_y!(
 
                 transforms.y_plan * transforms.y_scratch
 
-                nrm = T(1) / (domain.Ny - 1)
+                # Store transformed real part
                 real_0 = 0.5 * nrm * transforms.y_scratch[1]
+                real_mid = [nrm * transforms.y_scratch[ny] for ny in 2:(domain.Ny-1)]
                 real_end = 0.5 * nrm * transforms.y_scratch[domain.Ny]
 
                 # Transform imaginary part
@@ -228,30 +223,12 @@ function make_spectral_y!(
 
                 transforms.y_plan * transforms.y_scratch
 
-                imag_0 = 0.5 * nrm * transforms.y_scratch[1]
-                imag_end = 0.5 * nrm * transforms.y_scratch[domain.Ny]
-
                 # Combine and store results
-                data[nx, 1, nz, i] = Complex{T}(real_0, imag_0)
-
-                for ny = 2:(domain.Ny-1)
-                    # Recompute for middle coefficients
-                    for ny2 = 1:domain.Ny
-                        transforms.y_scratch[ny2] = real(data[nx, ny2, nz, i])
-                    end
-                    transforms.y_plan * transforms.y_scratch
-                    real_part = nrm * transforms.y_scratch[ny]
-
-                    for ny2 = 1:domain.Ny
-                        transforms.y_scratch[ny2] = imag(data[nx, ny2, nz, i])
-                    end
-                    transforms.y_plan * transforms.y_scratch
-                    imag_part = nrm * transforms.y_scratch[ny]
-
-                    data[nx, ny, nz, i] = Complex{T}(real_part, imag_part)
+                data[nx, 1, nz, i] = Complex{T}(real_0, 0.5 * nrm * transforms.y_scratch[1])
+                for (idx, ny) in enumerate(2:(domain.Ny-1))
+                    data[nx, ny, nz, i] = Complex{T}(real_mid[idx], nrm * transforms.y_scratch[ny])
                 end
-
-                data[nx, domain.Ny, nz, i] = Complex{T}(real_end, imag_end)
+                data[nx, domain.Ny, nz, i] = Complex{T}(real_end, 0.5 * nrm * transforms.y_scratch[domain.Ny])
             end
         end
     end
@@ -275,9 +252,8 @@ function make_physical_y!(
     domain::FlowFieldDomain{T},
     transforms::FlowFieldTransforms{T},
 ) where {T<:Real}
-
     if domain.Ny < 2
-        return data  # Trivial case  
+        return data
     end
 
     if transforms.y_plan === nothing
@@ -289,14 +265,12 @@ function make_physical_y!(
         for nz = 1:size(data, 3)
             for nx = 1:size(data, 1)
                 # Copy y-profile to scratch with inverse normalization
-                # See original C++ code: undo the endpoint scaling
-                transforms.y_scratch[1] = real(data[nx, 1, nz, i])
-
+                # Undo the endpoint scaling applied in forward transform
+                transforms.y_scratch[1] = 2.0 * data[nx, 1, nz, i]
                 for ny = 2:(domain.Ny-1)
-                    transforms.y_scratch[ny] = 0.5 * real(data[nx, ny, nz, i])
+                    transforms.y_scratch[ny] = data[nx, ny, nz, i]
                 end
-
-                transforms.y_scratch[domain.Ny] = real(data[nx, domain.Ny, nz, i])
+                transforms.y_scratch[domain.Ny] = 2.0 * data[nx, domain.Ny, nz, i]
 
                 # Perform inverse DCT-I transform (same as forward for DCT-I)
                 transforms.y_plan * transforms.y_scratch
@@ -317,9 +291,8 @@ function make_physical_y!(
     domain::FlowFieldDomain{T},
     transforms::FlowFieldTransforms{T},
 ) where {T<:Real}
-
     if domain.Ny < 2
-        return data  # Trivial case  
+        return data
     end
 
     if transforms.y_plan === nothing
@@ -331,33 +304,27 @@ function make_physical_y!(
         for nz = 1:size(data, 3)
             for nx = 1:size(data, 1)
                 # Transform real part
-                transforms.y_scratch[1] = real(data[nx, 1, nz, i])
-
+                transforms.y_scratch[1] = 2.0 * real(data[nx, 1, nz, i])
                 for ny = 2:(domain.Ny-1)
-                    transforms.y_scratch[ny] = 0.5 * real(data[nx, ny, nz, i])
+                    transforms.y_scratch[ny] = real(data[nx, ny, nz, i])
                 end
-
-                transforms.y_scratch[domain.Ny] = real(data[nx, domain.Ny, nz, i])
+                transforms.y_scratch[domain.Ny] = 2.0 * real(data[nx, domain.Ny, nz, i])
 
                 transforms.y_plan * transforms.y_scratch
-
                 real_result = copy(transforms.y_scratch)
 
                 # Transform imaginary part
-                transforms.y_scratch[1] = imag(data[nx, 1, nz, i])
-
+                transforms.y_scratch[1] = 2.0 * imag(data[nx, 1, nz, i])
                 for ny = 2:(domain.Ny-1)
-                    transforms.y_scratch[ny] = 0.5 * imag(data[nx, ny, nz, i])
+                    transforms.y_scratch[ny] = imag(data[nx, ny, nz, i])
                 end
-
-                transforms.y_scratch[domain.Ny] = imag(data[nx, domain.Ny, nz, i])
+                transforms.y_scratch[domain.Ny] = 2.0 * imag(data[nx, domain.Ny, nz, i])
 
                 transforms.y_plan * transforms.y_scratch
 
                 # Combine results
                 for ny = 1:domain.Ny
-                    data[nx, ny, nz, i] =
-                        Complex{T}(real_result[ny], transforms.y_scratch[ny])
+                    data[nx, ny, nz, i] = Complex{T}(real_result[ny], transforms.y_scratch[ny])
                 end
             end
         end
