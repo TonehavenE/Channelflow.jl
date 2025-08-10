@@ -40,9 +40,9 @@ function FlowField(
     Lz::T,
     a::T,
     b::T;
-    padded::Bool = false,
-    xz_state::FieldState = Physical,
-    y_state::FieldState = Physical,
+    padded::Bool=false,
+    xz_state::FieldState=Spectral,
+    y_state::FieldState=Spectral,
 ) where {T<:Real}
 
     # Create domain
@@ -80,9 +80,9 @@ Create FlowField from existing domain object.
 """
 function FlowField(
     domain::FlowFieldDomain{T};
-    padded::Bool = false,
-    xz_state::FieldState = Physical,
-    y_state::FieldState = Physical,
+    padded::Bool=false,
+    xz_state::FieldState=Spectral,
+    y_state::FieldState=Spectral,
 ) where {T}
 
     physical_data = nothing
