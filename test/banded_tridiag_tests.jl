@@ -8,6 +8,7 @@ using LinearAlgebra
         Basic checks on the BandedTridiag constructor.
         Ensures that it creates a matrix of the right type and size, and that it initializes correctly.
         =#
+        N = 6 # arbitrary choice
         A = BandedTridiag(N)
         B = BandedTridiag{Rational}(N)
 
