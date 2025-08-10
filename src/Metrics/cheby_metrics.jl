@@ -9,12 +9,12 @@ using ..ChebyCoeffs
 # ============================================================================
 
 """L2 norm squared"""
-function L2Norm2(u::ChebyCoeff{T}, normalize::Bool=true) where {T<:Number}
+function L2Norm2(u::ChebyCoeff{T}, normalize::Bool=true) where {T<:Real}
     @assert u.state == Spectral "Must be in Spectral state"
     N = length(u.data)
     sum_val = zero(real(T))
 
-    for m = 1:N
+    for m = N:-1:1
         psum = zero(T)
         for n = (m % 2 == 1 ? 1 : 2):2:N
             factor =
@@ -26,15 +26,14 @@ function L2Norm2(u::ChebyCoeff{T}, normalize::Bool=true) where {T<:Number}
                 )
             psum += u.data[n] * factor
         end
-        if T <: Real
-            sum_val += u.data[m] * psum
-        else
-            # For complex: use conjugate for proper inner product
-            sum_val += real(conj(u.data[m]) * psum)
-        end
+        sum_val += u.data[m] * psum
     end
 
     return normalize ? sum_val : sum_val * domain_length(u)
+end
+
+function L2Norm2(u::ChebyCoeff{T}, normalize::Bool=true) where {T<:Complex}
+    return L2Norm2(real(u), normalize) + L2Norm2(imag(u), normalize)
 end
 
 L2Norm(u::ChebyCoeff{T}, normalize::Bool=true) where {T<:Number} =
