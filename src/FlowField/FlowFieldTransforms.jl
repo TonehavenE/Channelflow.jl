@@ -53,10 +53,6 @@ function FlowFieldTransforms(domain::FlowFieldDomain{T}) where {T}
         # Create xz transforms
         # Transform over dimensions (1,3) = (x,z) for each (y,i)
         xz_plan = plan_rfft(sample_physical, (3, 1); flags=FFTW.MEASURE)
-        # println("The size of sample_spectral is: $(size(sample_spectral))")
-        # println("The domain is: $(domain)")
-        # println("size(sample_spectral, 1): $(size(sample_spectral, 1))")
-        # println("and div(2(domain.Mz - 1), 2) + 1 is $(div(2(domain.Mz - 1), 2) + 1)")
         xz_inverse_plan =
             plan_irfft(sample_spectral, domain.Nz, (3, 1); flags=FFTW.MEASURE)
 
