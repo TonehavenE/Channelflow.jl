@@ -20,9 +20,9 @@ export cmplx,
     Lz,
     domain_a,
     domain_b,
-    x,
-    y,
-    z,
+    nx_to_x,
+    ny_to_y,
+    nz_to_z,
     x_gridpoints,
     y_gridpoints,
     z_gridpoints,
@@ -136,9 +136,9 @@ domain_a(ff::FlowField) = ff.domain.a
 domain_b(ff::FlowField) = ff.domain.b
 
 # Coordinate functions (delegate to domain)
-x(ff::FlowField, nx::Int) = x_coord(ff.domain, nx)
-y(ff::FlowField, ny::Int) = y_coord(ff.domain, ny)
-z(ff::FlowField, nz::Int) = z_coord(ff.domain, nz)
+nx_to_x(ff::FlowField, nx::Int) = x_coord(ff.domain, nx)
+ny_to_y(ff::FlowField, ny::Int) = y_coord(ff.domain, ny)
+nz_to_z(ff::FlowField, nz::Int) = z_coord(ff.domain, nz)
 
 x_gridpoints(ff::FlowField) = x_gridpoints(ff.domain)
 y_gridpoints(ff::FlowField) = y_gridpoints(ff.domain)
