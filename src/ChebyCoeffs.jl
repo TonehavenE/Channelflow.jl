@@ -10,6 +10,5 @@ include("ChebyCoeffs/transforms.jl")
 include("ChebyCoeffs/evaluation.jl")
 include("ChebyCoeffs/calculus.jl")
 include("ChebyCoeffs/utilities.jl")
-include("ChebyCoeffs/norms.jl")
 
 end
