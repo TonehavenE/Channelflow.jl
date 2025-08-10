@@ -114,8 +114,8 @@ Transform to fully spectral state (spectral in all directions).
 Order matters: y first, then xz (following original C++ code).
 """
 function make_spectral!(ff::FlowField)
-    make_spectral_y!(ff)
     make_spectral_xz!(ff)
+    make_spectral_y!(ff)
     return ff
 end
 
@@ -126,8 +126,8 @@ Transform to fully physical state.
 Order: xz first, then y.
 """
 function make_physical!(ff::FlowField)
-    make_physical_xz!(ff)
     make_physical_y!(ff)
+    make_physical_xz!(ff)
     return ff
 end
 
