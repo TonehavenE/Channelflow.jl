@@ -98,24 +98,26 @@ function L2Norm2(ff::FlowField, normalize::Bool=true)
     @assert y_state(ff) == Spectral "FlowField must be in Spectral y state for spectral access"
 
     sum = 0.0
-    profile = ChebyCoeff{Complex}(num_y_modes(ff), domain_a(ff), domain_b(ff), Spectral)
 
     kxmin = ff.padded ? -kx_max_dealiased(ff) : kx_min(ff)
     kxmax = ff.padded ? kx_max_dealiased(ff) : kx_max(ff)
-    kzmin = ff.padded ? -kz_max_dealiased(ff) : kz_min(ff)
+    kzmin = 0
     kzmax = ff.padded ? kz_max_dealiased(ff) : kz_max(ff)
 
-    for i = 1:num_dimensions(ff), kx = kxmin:kxmax
-        mx = kx_to_mx(ff, kx)
-        cz = 1
-        for kz = kzmin:kzmax
-            mz = kz_to_mz(ff, kz)
-            for my = 1:num_y_modes(ff)
-                profile[my] = cmplx(ff, mx, my, mz, i)
+    cz = 1
+    for kz = kzmin:kzmax
+        mz = kz_to_mz(ff, kz)
+        for kx = kxmin:kxmax
+            mx = kx_to_mx(ff, kx)
+            for i = 1:num_dimensions(ff)
+                profile = ChebyCoeff{Complex}(num_y_gridpoints(ff), domain_a(ff), domain_b(ff), Spectral)
+                for ny = 1:num_y_gridpoints(ff)
+                    profile[ny] = cmplx(ff, mx, ny, mz, i)
+                end
+                sum += cz * L2Norm2(profile, normalize)
             end
-            sum += cz * L2Norm2(profile, normalize)
-            cz = 2
         end
+        cz = 2
     end
     if !normalize
         sum *= Lx(ff) * Lz(ff)
