@@ -278,6 +278,7 @@ function make_physical_y!(
             end
         end
     end
+    data ./= (domain.Ny - 1)
 
     return data
 end
@@ -325,6 +326,7 @@ function make_physical_y!(
             end
         end
     end
+    data ./= (domain.Ny - 1)
 
     return data
 end
