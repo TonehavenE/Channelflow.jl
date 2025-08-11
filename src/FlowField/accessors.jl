@@ -36,36 +36,47 @@ export cmplx,
     mz_to_kz,
     kx_max_dealiased,
     kz_max_dealiased,
-    is_aliased
+    is_aliased,
+    tensor_shape,
+    tensor_rank,
+    is_scalar_field,
+    is_vector_field,
+    is_matrix_field,
+    is_symmetric_field
 
 # ===========================
 # Element Access Methods
 # ===========================
 
 """
-    ff[nx, ny, nz, i]
+    ff[nx, ny, nz, indices...]
 
 Access physical field values. Requires FlowField to be in Physical xz state.
-Uses 1-based indexing.
+For vector valued FlowFields: ff[nx, ny, nz, i]
+For matrix valued FlowFields: ff[nx, ny, nz, i, j]
 """
-function Base.getindex(ff::FlowField, nx::Int, ny::Int, nz::Int, i::Int)
+function Base.getindex(ff::FlowField, nx::Int, ny::Int, nz::Int, indices...)
     @assert ff.xz_state == Physical "FlowField must be in Physical xz state for direct access"
     @assert ff.physical_data !== nothing "Physical data not allocated"
     @assert 1 <= nx <= ff.domain.Nx "nx out of bounds"
     @assert 1 <= ny <= ff.domain.Ny "ny out of bounds"
     @assert 1 <= nz <= ff.domain.Nz "nz out of bounds"
-    @assert 1 <= i <= ff.domain.num_dimensions "component index i out of bounds"
-    return ff.physical_data[nx, ny, nz, i]
+    component = tensor_index(ff.domain.tensor_shape, indices...)
+    @assert 1 <= component <= ff.domain.num_dimensions "component index i out of bounds"
+    return ff.physical_data[nx, ny, nz, component]
 end
 
-function Base.setindex!(ff::FlowField, val, nx::Int, ny::Int, nz::Int, i::Int)
+function Base.setindex!(ff::FlowField, val, nx::Int, ny::Int, nz::Int, indices...)
     @assert ff.xz_state == Physical "FlowField must be in Physical xz state for direct access"
-    _ensure_data_allocated!(ff)
     @assert 1 <= nx <= ff.domain.Nx "nx out of bounds"
     @assert 1 <= ny <= ff.domain.Ny "ny out of bounds"
     @assert 1 <= nz <= ff.domain.Nz "nz out of bounds"
-    @assert 1 <= i <= ff.domain.num_dimensions "component index i out of bounds"
-    ff.physical_data[nx, ny, nz, i] = val
+
+    _ensure_data_allocated!(ff)
+    component = tensor_index(ff.domain.tensor_shape, indices...)
+    @assert 1 <= component <= ff.domain.num_dimensions "component index i out of bounds"
+
+    ff.physical_data[nx, ny, nz, component] = val
 end
 
 """
@@ -74,14 +85,16 @@ end
 Access spectral coefficients. Requires FlowField to be in Spectral xz state.
 Returns Complex{T} directly.
 """
-function cmplx(ff::FlowField{T}, mx::Int, my::Int, mz::Int, i::Int) where {T}
+function cmplx(ff::FlowField{T}, mx::Int, my::Int, mz::Int, indices...) where {T}
     @assert ff.xz_state == Spectral "FlowField must be in Spectral xz state for spectral access"
     @assert ff.spectral_data !== nothing "Spectral data not allocated"
     @assert 1 <= mx <= ff.domain.Mx "mx out of bounds"
     @assert 1 <= my <= ff.domain.My "my out of bounds"
     @assert 1 <= mz <= ff.domain.Mz "mz out of bounds"
-    @assert 1 <= i <= ff.domain.num_dimensions "component index i out of bounds"
-    return ff.spectral_data[mx, my, mz, i]
+
+    component = tensor_index(ff.domain.tensor_shape, indices...)
+    @assert 1 <= component <= ff.domain.num_dimensions "component index i out of bounds"
+    return ff.spectral_data[mx, my, mz, component]
 end
 
 """
@@ -95,15 +108,16 @@ function set_cmplx!(
     mx::Int,
     my::Int,
     mz::Int,
-    i::Int,
+    indices...,
 ) where {T}
     @assert ff.xz_state == Spectral "FlowField must be in Spectral xz state for spectral access"
     _ensure_data_allocated!(ff)
     @assert 1 <= mx <= ff.domain.Mx "mx out of bounds"
     @assert 1 <= my <= ff.domain.My "my out of bounds"
     @assert 1 <= mz <= ff.domain.Mz "mz out of bounds"
-    @assert 1 <= i <= ff.domain.num_dimensions "component index i out of bounds"
-    ff.spectral_data[mx, my, mz, i] = val
+    component = tensor_index(ff.domain.tensor_shape, indices...)
+    @assert 1 <= component <= ff.domain.num_dimensions "component index i out of bounds"
+    ff.spectral_data[mx, my, mz, component] = val
 end
 
 # ===========================
@@ -160,3 +174,10 @@ kz_min(ff::FlowField) = 0
 kx_max_dealiased(ff::FlowField) = kx_max_dealiased(ff.domain)
 kz_max_dealiased(ff::FlowField) = kz_max_dealiased(ff.domain)
 is_aliased(ff::FlowField, kx::Int, kz::Int) = is_aliased(ff.domain, kx, kz)
+
+tensor_shape(ff::FlowField) = ff.domain.tensor_shape
+tensor_rank(ff::FlowField) = length(ff.domain.tensor_shape.dims)
+is_scalar_field(ff::FlowField) = ff.domain.tensor_shape == SCALAR_TENSOR
+is_vector_field(ff::FlowField) = ff.domain.tensor_shape == VECTOR_TENSOR
+is_matrix_field(ff::FlowField) = ff.domain.tensor_shape == MATRIX_TENSOR
+is_symmetric_field(ff::FlowField) = ff.domain.tensor_shape == SYMMETRIC_TENSOR
