@@ -183,12 +183,21 @@ function Base.display(ff::FlowField)
     end
 
     if xz_state(ff) == Spectral
-        for i = 1:num_dimensions(ff), mx = 1:num_x_modes(ff), my = 1:num_y_modes(ff), mz = 1:num_z_modes(ff)
-            @printf("  i=%d mx=%d my=%d mz=%d: %8.3f + %8.3f i\n", i, mx, my, mz, real(cmplx(ff, mx, my, mz, i)), imag(cmplx(ff, mx, my, mz, i)))
+        for i in Iterators.product((1:l for l in tensor_shape(ff).dims)...),
+            mx = 1:num_x_modes(ff),
+            my = 1:num_y_modes(ff),
+            mz = 1:num_z_modes(ff)
+
+            println("  i=$i mx=$mx my=$my mz=$mz: ", cmplx(ff, mx, my, mz, i...))
         end
+
     else
-        for i = 1:num_dimensions(ff), nx = 1:num_x_gridpoints(ff), ny = 1:num_y_gridpoints(ff), nz = 1:num_z_gridpoints(ff)
-            println("  i=$i nx=$nx ny=$ny nz=$nz: ", ff[nx, ny, nz, i])
+        for i in Iterators.product((1:l for l in tensor_shape(ff).dims)...),
+            nx = 1:num_x_gridpoints(ff),
+            ny = 1:num_y_gridpoints(ff),
+            nz = 1:num_z_gridpoints(ff)
+
+            println("  i=$i nx=$nx ny=$ny nz=$nz: ", ff[nx, ny, nz, i...])
         end
     end
 end
