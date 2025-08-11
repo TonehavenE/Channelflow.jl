@@ -236,9 +236,17 @@ end
     make_physical_y!(data, domain, transforms)
 
 Transform y direction from spectral to physical space using inverse Chebyshev transform.
-This uses DCT-I with inverse normalization.
+This uses DCT-I with proper inverse normalization to exactly undo make_spectral_y!.
 
-Works on either real or complex data arrays.
+The forward transform applies:
+- Overall factor: 1/(Ny-1)  
+- Endpoint additional factor: 0.5
+- So endpoints get: 0.5/(Ny-1), interior gets: 1/(Ny-1)
+
+The DCT-I applied twice scales by 2(Ny-1), so to invert we need:
+- Undo the forward normalization
+- Account for the 2(Ny-1) scaling from double DCT-I
+- Net result: just undo the endpoint scaling by factor of 2
 
 Input:  data contains Chebyshev polynomial coefficients  
 Output: data contains values at Chebyshev-Gauss-Lobatto points
@@ -260,25 +268,27 @@ function make_physical_y!(
     for i = 1:domain.num_dimensions
         for nz = 1:size(data, 3)
             for nx = 1:size(data, 1)
-                # Copy y-profile to scratch with inverse normalization
-                # Undo the endpoint scaling applied in forward transform
+                # Copy coefficients with inverse normalization
+                # We only need to undo the endpoint scaling of 0.5
+                # The 1/(Ny-1) and 2(Ny-1) factors cancel out
                 transforms.y_scratch[1] = 2.0 * data[nx, 1, nz, i]
                 for ny = 2:(domain.Ny-1)
-                    transforms.y_scratch[ny] = data[nx, ny, nz, i]
+                    transforms.y_scratch[ny] = data[nx, ny, nz, i]  # No change needed
                 end
                 transforms.y_scratch[domain.Ny] = 2.0 * data[nx, domain.Ny, nz, i]
 
-                # Perform inverse DCT-I transform (same as forward for DCT-I)
+                # Perform DCT-I transform
                 transforms.y_plan * transforms.y_scratch
 
-                # Copy back to data array
+                # The result is scaled by 2(Ny-1) from the double DCT
+                # But our forward transform divided by (Ny-1), so net factor is 2
+                # We need to divide by 2 to get back the original
                 for ny = 1:domain.Ny
-                    data[nx, ny, nz, i] = transforms.y_scratch[ny]
+                    data[nx, ny, nz, i] = transforms.y_scratch[ny] / 2.0
                 end
             end
         end
     end
-    data ./= (domain.Ny - 1)
 
     return data
 end
@@ -308,7 +318,9 @@ function make_physical_y!(
                 transforms.y_scratch[domain.Ny] = 2.0 * real(data[nx, domain.Ny, nz, i])
 
                 transforms.y_plan * transforms.y_scratch
-                real_result = copy(transforms.y_scratch)
+
+                # Scale by 1/2 and store real part
+                real_result = transforms.y_scratch ./ 2.0
 
                 # Transform imaginary part
                 transforms.y_scratch[1] = 2.0 * imag(data[nx, 1, nz, i])
@@ -319,14 +331,13 @@ function make_physical_y!(
 
                 transforms.y_plan * transforms.y_scratch
 
-                # Combine results
+                # Combine results with proper scaling
                 for ny = 1:domain.Ny
-                    data[nx, ny, nz, i] = Complex{T}(real_result[ny], transforms.y_scratch[ny])
+                    data[nx, ny, nz, i] = Complex{T}(real_result[ny], transforms.y_scratch[ny] / 2.0)
                 end
             end
         end
     end
-    data ./= (domain.Ny - 1)
 
     return data
 end
