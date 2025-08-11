@@ -188,7 +188,7 @@ function Base.display(ff::FlowField)
         end
     else
         for i = 1:num_dimensions(ff), nx = 1:num_x_gridpoints(ff), ny = 1:num_y_gridpoints(ff), nz = 1:num_z_gridpoints(ff)
-            println("  i=$i ny=$ny nx=$nx nz=$nz: ", ff[nx, ny, nz, i])
+            println("  i=$i nx=$nx ny=$ny nz=$nz: ", ff[nx, ny, nz, i])
         end
     end
 end
