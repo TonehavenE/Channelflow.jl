@@ -25,11 +25,46 @@ end
 # Constructors
 # ===========================
 
+
+"""
+    FlowField(Nx, Ny, Nz, tensor_shape, Lx, Lz, a, b; kwargs...)
+
+Creates a tensor-valued FlowField.
+"""
+function FlowField(
+    Nx::Int, Ny::Int, Nz::Int,
+    tensor_shape::TensorShape,
+    Lx::T, Lz::T, a::T, b::T;
+    padded::Bool=false,
+    xz_state::FieldState=Spectral,
+    y_state::FieldState=Spectral,
+) where {T<:Real}
+
+    # Create domain with tensor shape
+    domain = FlowFieldDomain(Nx, Ny, Nz, tensor_shape, Lx, Lz, a, b)
+
+    # Allocate data based on state
+    physical_data = nothing
+    spectral_data = nothing
+
+    if xz_state == Physical
+        physical_data = zeros(T, domain.Nx, domain.Ny, domain.Nz, domain.num_dimensions)
+    else
+        spectral_data = zeros(Complex{T}, domain.Mx, domain.My, domain.Mz, domain.num_dimensions)
+    end
+
+    transforms = FlowFieldTransforms(domain)
+
+    return FlowField{T}(
+        domain, xz_state, y_state, padded,
+        physical_data, spectral_data, transforms
+    )
+end
+
 """
     FlowField(Nx, Ny, Nz, num_dimensions, Lx, Lz, a, b; kwargs...)
 
 Create a FlowField with specified grid and domain parameters.
-FFTW plans are created immediately for efficiency.
 """
 function FlowField(
     Nx::Int,
@@ -44,35 +79,10 @@ function FlowField(
     xz_state::FieldState=Spectral,
     y_state::FieldState=Spectral,
 ) where {T<:Real}
-
-    # Create domain
-    domain = FlowFieldDomain(Nx, Ny, Nz, num_dimensions, Lx, Lz, a, b)
-
-    # Allocate appropriate data arrays based on initial state
-    physical_data = nothing
-    spectral_data = nothing
-
-    if xz_state == Physical
-        physical_data = zeros(T, domain.Nx, domain.Ny, domain.Nz, domain.num_dimensions)
-    else
-        spectral_data =
-            zeros(Complex{T}, domain.Mx, domain.My, domain.Mz, domain.num_dimensions)
-    end
-
-    # Create FFTW plans
-    transforms = FlowFieldTransforms(domain)
-
-    return FlowField{T}(
-        domain,
-        xz_state,
-        y_state,
-        padded,
-        physical_data,
-        spectral_data,
-        transforms,
-    )
+    tensor_shape = TensorShape((num_dimensions,))
+    return FlowField(Nx, Ny, Nz, tensor_shape, Lx, Lz, a, b;
+        padded=padded, xz_state=xz_state, y_state=y_state)
 end
-
 """
     FlowField(domain; kwargs...)
 

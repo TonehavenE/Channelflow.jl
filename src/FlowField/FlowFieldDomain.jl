@@ -5,6 +5,30 @@ Defines the FlowFieldDomain type that stores all grid and domain parameters
 for spectral flow field computations.
 =#
 
+"""
+Represents the shape of a tensor field.
+"""
+struct TensorShape
+    dims::Tuple{Vararg{Int}}
+end
+
+# Common tensor shapes
+const SCALAR_TENSOR = TensorShape((1,))
+const VECTOR_TENSOR = TensorShape((3,))
+const MATRIX_TENSOR = TensorShape((3, 3))
+#=
+3x3 Symmetric Tensor:
+[
+    [T11, T12, T13],
+    [T12, T22, T23],
+    [T13, T23, T33]
+]
+    stored as [T11, T22, T33, T12, T13, T23]
+=#
+const SYMMETRIC_TENSOR = TensorShape((6,))
+
+
+
 export FlowFieldDomain,
     x_coord,
     y_coord,
@@ -25,7 +49,13 @@ export FlowFieldDomain,
     total_modes,
     domain_volume,
     geom_congruent,
-    congruent
+    congruent,
+    TensorShape,
+    SCALAR_TENSOR,
+    VECTOR_TENSOR,
+    MATRIX_TENSOR,
+    SYMMETRIC_TENSOR,
+    tensor_index
 
 """
 Stores domain parameters for FlowField.
@@ -38,7 +68,8 @@ struct FlowFieldDomain{T<:Real}
     Nx::Int        # Number of x gridpoints
     Ny::Int        # Number of y gridpoints  
     Nz::Int        # Number of z gridpoints
-    num_dimensions::Int  # Number of vector components
+    num_dimensions::Int  # Number of flattened tensor components
+    tensor_shape::TensorShape  # tensor structure
 
     # Physical domain
     Lx::T          # Domain length in x direction
@@ -56,7 +87,7 @@ struct FlowFieldDomain{T<:Real}
         Nx::Int,
         Ny::Int,
         Nz::Int,
-        num_dimensions::Int,
+        tensor_shape::TensorShape,
         Lx::T,
         Lz::T,
         a::T,
@@ -66,10 +97,12 @@ struct FlowFieldDomain{T<:Real}
         @assert Nx > 0 "Nx must be positive"
         @assert Ny > 0 "Ny must be positive"
         @assert Nz > 0 "Nz must be positive"
-        @assert num_dimensions > 0 "num_dimensions must be positive"
         @assert Lx > 0 "Lx must be positive"
         @assert Lz > 0 "Lz must be positive"
         @assert a < b "a must be less than b"
+
+        num_dimensions = prod(tensor_shape.dims)
+        @assert num_dimensions > 0 "tensor_shape must have positive number of elements"
 
         # Calculate derived quantities
         Mx = Nx
@@ -77,7 +110,22 @@ struct FlowFieldDomain{T<:Real}
         Mz = div(Nz, 2) + 1  # Real FFT produces Nz/2+1 complex modes
         Nzpad = 2 * Mz       # Need space for real + imaginary parts
 
-        new{T}(Nx, Ny, Nz, num_dimensions, Lx, Lz, a, b, Mx, My, Mz, Nzpad)
+        new{T}(Nx, Ny, Nz, num_dimensions, tensor_shape, Lx, Lz, a, b, Mx, My, Mz, Nzpad)
+    end
+
+    # Backward compatible constructor with integer num_dimensions
+    function FlowFieldDomain(
+        Nx::Int,
+        Ny::Int,
+        Nz::Int,
+        num_dimensions::Int,
+        Lx::T,
+        Lz::T,
+        a::T,
+        b::T,
+    ) where {T<:Real}
+        tensor_shape = TensorShape((num_dimensions,))
+        FlowFieldDomain(Nx, Ny, Nz, tensor_shape, Lx, Lz, a, b)
     end
 end
 
@@ -90,7 +138,7 @@ function Base.:(==)(d1::FlowFieldDomain, d2::FlowFieldDomain)
         d1.Nx == d2.Nx &&
         d1.Ny == d2.Ny &&
         d1.Nz == d2.Nz &&
-        d1.num_dimensions == d2.num_dimensions &&
+        d1.tensor_shape == d2.tensor_shape &&
         d1.Lx ≈ d2.Lx &&
         d1.Lz ≈ d2.Lz &&
         d1.a ≈ d2.a &&
@@ -104,7 +152,7 @@ end
 Check if two domains have the same geometry (grid + physical dimensions)
 but may differ in number of vector components.
 """
-function geom_congruent(d1::FlowFieldDomain, d2::FlowFieldDomain; eps::Real = 1e-13)
+function geom_congruent(d1::FlowFieldDomain, d2::FlowFieldDomain; eps::Real=1e-13)
     return (
         d1.Nx == d2.Nx &&
         d1.Ny == d2.Ny &&
@@ -121,8 +169,8 @@ end
 
 Check if two domains are completely congruent (geometry + vector dimensions).
 """
-function congruent(d1::FlowFieldDomain, d2::FlowFieldDomain; eps::Real = 1e-13)
-    return geom_congruent(d1, d2; eps = eps) && d1.num_dimensions == d2.num_dimensions
+function congruent(d1::FlowFieldDomain, d2::FlowFieldDomain; eps::Real=1e-13)
+    return geom_congruent(d1, d2; eps=eps) && d1.num_dimensions == d2.num_dimensions
 end
 
 # ===========================
@@ -316,4 +364,45 @@ Total number of spectral modes: Mx * My * Mz
 """
 function total_modes(domain::FlowFieldDomain)
     return domain.Mx * domain.My * domain.Mz
+end
+
+# ===========================
+# Tensor indexing utilities
+# ===========================
+
+"""Convert tensor indices to flat component index."""
+function tensor_index(shape::TensorShape, indices...)
+    if shape == SYMMETRIC_TENSOR
+        # Symmetric 3x3 tensor: [T11, T22, T33, T12, T13, T23]
+        @assert length(indices) == 2 "Expected 2 indices for symmetric tensor"
+        i, j = indices
+        @assert 1 <= i <= 3 && 1 <= j <= 3 "Indices must be 1,2,3"
+
+        if i == j
+            return i  # diagonal: positions 1,2,3
+        else
+            if (i == 1 && j == 2) || (i == 2 && j == 1)
+                return 4
+            elseif (i == 1 && j == 3) || (i == 3 && j == 1)
+                return 5
+            else
+                return 6
+            end
+        end
+    elseif length(shape.dims) == 1
+        @assert length(indices) == 1 "Expected 1 index for tensor shape $(shape.dims)"
+        @assert 1 <= indices[1] <= shape.dims[1] "Index out of bounds"
+        return indices[1]
+    else
+        # General tensor - column-major indexing
+        @assert length(indices) == length(shape.dims) "Wrong number of indices"
+        linear_idx = 0
+        stride = 1
+        for (idx, dim) in zip(indices, shape.dims)
+            @assert 1 <= idx <= dim "Index $idx out of bounds for dimension $dim"
+            linear_idx += (idx - 1) * stride
+            stride *= dim
+        end
+        return linear_idx + 1
+    end
 end

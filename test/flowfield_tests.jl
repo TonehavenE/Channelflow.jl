@@ -280,6 +280,27 @@ using Channelflow
 
         error = ff1.physical_data - ff2.physical_data
         @test maximum(error) < 1e-15
+
+        # try different Ny
+        Nx, Ny, Nz, Nd = 2, 9, 2, 1
+        ff1 = FlowField(Nx, Ny, Nz, Nd, 2pi, 1pi, -1.0, 1.0)
+        ff2 = FlowField(Nx, Ny, Nz, Nd, 2pi, 1pi, -1.0, 1.0)
+        make_physical!(ff1)
+        make_physical!(ff2)
+
+        for i = 1:Nd, nx = 1:Nx, ny = 1:Ny, nz = 1:Nz
+            val = sin(pi * (nx - 1) / 8) * cos(pi * (nz - 1) / 16) * (ny - 1 + i - 1)
+            ff1[nx, ny, nz, i] = val
+            ff2[nx, ny, nz, i] = val
+        end
+
+        make_spectral_xz!(ff2)
+        make_spectral_y!(ff2)
+        make_physical_y!(ff2)
+        make_physical_xz!(ff2)
+
+        error = ff1.physical_data - ff2.physical_data
+        @test maximum(error) < 1e-15
     end
 
 end
