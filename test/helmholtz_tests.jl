@@ -30,10 +30,10 @@ end
     """
     function evaluate_case(
         h::HelmholtzTestCase;
-        N = 63,
-        allowable_error::Real = 1e-12,
-        lambdas = [0.5, 1.0, 2.0, 5.0],
-        nus = [1.0, 5.0, 10.0, 100.0],
+        N=63,
+        allowable_error::Real=1e-12,
+        lambdas=[0.5, 1.0, 2.0, 5.0],
+        nus=[1.0, 5.0, 10.0, 100.0],
     )
         for lambda in lambdas
             for nu in nus
@@ -42,11 +42,11 @@ end
                 u_exact = h.u.(x)
 
                 rhs = ChebyCoeff(f_data, h.a, h.b, Physical)
-                makeSpectral!(rhs)
+                make_spectral!(rhs)
 
                 prob = HelmholtzProblem(N, h.a, h.b, lambda, nu)
                 u = solve(prob, rhs, h.ua, h.ub)
-                makePhysical!(u)
+                make_physical!(u)
 
                 max_error = maximum(abs.(u.data - u_exact))
                 @test max_error < allowable_error
@@ -59,12 +59,12 @@ end
         # vary k
         for k = -10:10
             test_case_sin = HelmholtzTestCase(
-                a = 0.0,
-                b = 2 * pi,
-                ua = 0.0,
-                ub = 0.0,
-                u = x -> sin(k * x),
-                f = (x, lambda, nu) -> -nu * k^2 * sin(k * x) - lambda * sin(k * x),
+                a=0.0,
+                b=2 * pi,
+                ua=0.0,
+                ub=0.0,
+                u=x -> sin(k * x),
+                f=(x, lambda, nu) -> -nu * k^2 * sin(k * x) - lambda * sin(k * x),
             )
             evaluate_case(test_case_sin)
         end
@@ -72,12 +72,12 @@ end
 
         # ----- u(x) = 1 - x^2 -----
         test_case_quadratic = HelmholtzTestCase(
-            a = -1.0,
-            b = 1.0,
-            ua = 0.0,
-            ub = 0.0,
-            u = x -> 1 - x^2,
-            f = (x, lambda, nu) -> lambda * x^2 - lambda - 2 * nu,
+            a=-1.0,
+            b=1.0,
+            ua=0.0,
+            ub=0.0,
+            u=x -> 1 - x^2,
+            f=(x, lambda, nu) -> lambda * x^2 - lambda - 2 * nu,
         )
         evaluate_case(test_case_quadratic)
 
@@ -85,14 +85,14 @@ end
         # vary k
         for k = -10:10
             test_case_e = HelmholtzTestCase(
-                a = 0.0,
-                b = 1.0,
-                ua = 1.0,
-                ub = exp(k),
-                u = x -> exp(k * x),
-                f = (x, lambda, nu) -> k^2 * nu * exp(k * x) - lambda * exp(k * x),
+                a=0.0,
+                b=1.0,
+                ua=1.0,
+                ub=exp(k),
+                u=x -> exp(k * x),
+                f=(x, lambda, nu) -> k^2 * nu * exp(k * x) - lambda * exp(k * x),
             )
-            evaluate_case(test_case_e; allowable_error = 1.0e-10)
+            evaluate_case(test_case_e; allowable_error=1.0e-10)
         end
     end
 

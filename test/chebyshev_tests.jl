@@ -31,7 +31,7 @@ using LinearAlgebra
         u = ChebyCoeff(N, -1, 1, Spectral)
         u[3] = 1.0  # T_2(x) = 2x^2 - 1
 
-        makePhysical!(u)
+        make_physical!(u)
         @test u.state == Physical
 
         # Check values at Chebyshev points
@@ -42,7 +42,7 @@ using LinearAlgebra
         end
 
         # Transform back
-        makeSpectral!(u)
+        make_spectral!(u)
         @test u.state == Spectral
         @test abs(u[3] - 1.0) < 1e-12
         @test maximum(abs, u.data[[1:2; 4:end]]) < 1e-12
@@ -117,8 +117,8 @@ using LinearAlgebra
         # Test pointwise multiplication (in Physical state)
         u_phys = ChebyCoeff(u)
         v_phys = ChebyCoeff(v)
-        makePhysical!(u_phys)
-        makePhysical!(v_phys)
+        make_physical!(u_phys)
+        make_physical!(v_phys)
 
         w_phys = u_phys * v_phys
         @test w_phys.data ≈ u_phys.data .* v_phys.data

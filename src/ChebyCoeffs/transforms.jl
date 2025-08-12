@@ -3,8 +3,8 @@ Defines transform operations for ChebyCoeff.
 Must be included after types_and_constructors.jl.
 =#
 
-export makeSpectral!,
-    makePhysical!, makeState!, setToZero!, setState!, chebyfft!, ichebyfft!
+export make_spectral!,
+    make_physical!, make_state!, set_to_zero!, set_state!, chebyfft!, ichebyfft!
 
 """Transform from Physical to Spectral state using provided transform."""
 function chebyfft!(u::ChebyCoeff{T}, t::ChebyTransform) where {T<:Number}
@@ -74,26 +74,26 @@ function ichebyfft!(u::ChebyCoeff{T}, t::ChebyTransform) where {T<:Number}
 end
 
 # Convenience methods that create temporary transforms
-function makeSpectral!(u::ChebyCoeff{T}) where {T<:Number}
+function make_spectral!(u::ChebyCoeff{T}) where {T<:Number}
     if u.state == Physical
         t = ChebyTransform(length(u.data))
         chebyfft!(u, t)
     end
 end
 
-function makePhysical!(u::ChebyCoeff{T}) where {T<:Number}
+function make_physical!(u::ChebyCoeff{T}) where {T<:Number}
     if u.state == Spectral
         t = ChebyTransform(length(u.data))
         ichebyfft!(u, t)
     end
 end
 
-function makeState!(u::ChebyCoeff{T}, s::FieldState) where {T<:Number}
+function make_state!(u::ChebyCoeff{T}, s::FieldState) where {T<:Number}
     if u.state != s
         if u.state == Physical
-            makeSpectral!(u)
+            make_spectral!(u)
         else
-            makePhysical!(u)
+            make_physical!(u)
         end
     end
 end

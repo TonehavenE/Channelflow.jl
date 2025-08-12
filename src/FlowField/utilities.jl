@@ -5,6 +5,7 @@ Utility methods for the FlowField structure. Should be included after types_and_
 # ===========================
 # Utility Methods
 # ===========================
+import ..ChebyCoeffs: set_to_zero!
 export swap!, zero_padded_modes!
 
 """

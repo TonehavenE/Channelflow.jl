@@ -3,7 +3,7 @@ Basic arithmetic and manipulation operations for ChebyCoeff type.
 Must be included after types_and_constructors.jl.
 =#
 
-export bounds, domain_length, num_modes, state, setBounds!, setState!, setToZero!
+export bounds, domain_length, num_modes, state, setBounds!, set_state!, set_to_zero!
 
 function congruent_structure(u::ChebyCoeff, v::ChebyCoeff)
     return (length(u) == length(v) && u.a == v.a && u.b == v.b && u.state == v.state)
@@ -22,7 +22,7 @@ Base.eltype(::ChebyCoeff{T}) where {T} = T
 # Domain properties
 bounds(u::ChebyCoeff) = (u.a, u.b)
 domain_length(u::ChebyCoeff) = u.b - u.a
-numModes(u::ChebyCoeff) = length(u.data)
+num_modes(u::ChebyCoeff) = length(u.data)
 state(u::ChebyCoeff) = u.state
 
 function setBounds!(u::ChebyCoeff, a::Real, b::Real)
@@ -31,7 +31,7 @@ function setBounds!(u::ChebyCoeff, a::Real, b::Real)
     u.b = Float64(b)
 end
 
-function setState!(u::ChebyCoeff, s::FieldState)
+function set_state!(u::ChebyCoeff, s::FieldState)
     u.state = s
 end
 
@@ -39,7 +39,7 @@ function Base.resize!(u::ChebyCoeff, N::Int)
     resize!(u.data, N)
 end
 
-function setToZero!(u::ChebyCoeff)
+function set_to_zero!(u::ChebyCoeff)
     fill!(u.data, 0.0)
 end
 

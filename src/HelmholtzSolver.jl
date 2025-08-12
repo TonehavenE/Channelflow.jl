@@ -55,16 +55,16 @@ function right_coeffs(n::Int, v::CoeffVariables)
     (right_lower_coeff(n, v), right_diag_coeff(n, v), right_upper_coeff(n, v))
 end
 
-function build_left_tridiag(v::CoeffVariables, numModes::Int, parity::Parity)::BandedTridiag
-    A = BandedTridiag(numModes)
+function build_left_tridiag(v::CoeffVariables, num_modes::Int, parity::Parity)::BandedTridiag
+    A = BandedTridiag(num_modes)
 
     # Set first row to all ones
-    for i = 1:numModes
+    for i = 1:num_modes
         A[1, i] = 1.0
     end
 
     # Fill tridiagonal rows
-    for i = 2:numModes
+    for i = 2:num_modes
         n = 2 * (i - 1)
         if parity == Odd
             n += 1
@@ -85,16 +85,16 @@ end
 
 function build_right_tridiag(
     v::CoeffVariables,
-    numModes::Int,
+    num_modes::Int,
     parity::Parity,
 )::BandedTridiag
-    B = BandedTridiag(numModes)
+    B = BandedTridiag(num_modes)
 
     # First row
     B[1, 1] = 1.0
 
     # Fill tridiagonal rows
-    for i = 2:numModes
+    for i = 2:num_modes
         n = 2 * (i - 1)
         if parity == Odd
             n += 1
@@ -135,7 +135,7 @@ struct HelmholtzProblem
         a::Real,
         b::Real,
         lambda::Real,
-        nu::Real = 1.0,
+        nu::Real=1.0,
     )
         @assert number_modes % 2 == 1 "Number of modes must be odd"
         @assert number_modes > 2 "Must have at least three modes"
@@ -207,7 +207,7 @@ function solve!(h::HelmholtzProblem, u::ChebyCoeff, f::ChebyCoeff, ua::Real, ub:
     UL_solve_strided!(h.A_even, u, 0, 2)  # Even modes
     UL_solve_strided!(h.A_odd, u, 1, 2)   # Odd modes
 
-    setState!(u, Spectral)
+    set_state!(u, Spectral)
 
     return u
 end
@@ -248,7 +248,7 @@ function solve!(
     uamean = mean_value(u_temp)
 
     # Step 2: Solve homogeneous BCs with constant forcing to find response
-    setToZero!(rhs_temp)
+    set_to_zero!(rhs_temp)
     rhs_temp[1] = h.nu  # Constant forcing
     solve!(h, u_temp, rhs_temp, 0.0, 0.0)
     ucmean = mean_value(u_temp)
@@ -294,7 +294,7 @@ function test_helmholtz()
 
     println("Setting up RHS function...")
     rhs = ChebyCoeff(f_data, a, b, Physical)
-    makeSpectral!(rhs)
+    make_spectral!(rhs)
 
     # Initialize solution
     u = ChebyCoeff(N, a, b, Spectral)
@@ -307,7 +307,7 @@ function test_helmholtz()
     solve!(h, u, rhs, ua, ub)
 
     # Compare with analytical solution
-    makePhysical!(u)
+    make_physical!(u)
     u_analytical = [u_exact(x) for x in x_points]
 
     max_error = maximum(abs.(u.data - u_analytical))

@@ -144,7 +144,7 @@ end
 """L∞ norm (maximum absolute value)"""
 function LinfNorm(u::ChebyCoeff{T}) where {T<:Number}
     original_state = u.state
-    makePhysical!(u)
+    make_physical!(u)
 
     if T <: Real
         result = maximum(abs, u.data)
@@ -152,7 +152,7 @@ function LinfNorm(u::ChebyCoeff{T}) where {T<:Number}
         result = maximum(abs, u.data)
     end
 
-    makeState!(u, original_state)
+    make_state!(u, original_state)
     return result
 end
 
@@ -161,9 +161,9 @@ function L1Norm(u::ChebyCoeff{T}, normalize::Bool=true) where {T<:Number}
     # For complex case, this computes ∫|Re(u)| + |Im(u)| dx
     if T <: Real
         u_copy = deepcopy(u)
-        makePhysical!(u_copy)
+        make_physical!(u_copy)
         u_copy.data .= abs.(u_copy.data)
-        makeSpectral!(u_copy)
+        make_spectral!(u_copy)
 
         integrated = integrate(u_copy)
         result = eval_b(integrated) - eval_a(integrated)
@@ -172,13 +172,13 @@ function L1Norm(u::ChebyCoeff{T}, normalize::Bool=true) where {T<:Number}
         u_real = real(u)
         u_imag = imag(u)
 
-        makePhysical!(u_real)
-        makePhysical!(u_imag)
+        make_physical!(u_real)
+        make_physical!(u_imag)
 
         magnitude = ChebyCoeff{Float64}(length(u), u.a, u.b, Physical)
         magnitude.data .= sqrt.(u_real.data .^ 2 .+ u_imag.data .^ 2)
 
-        makeSpectral!(magnitude)
+        make_spectral!(magnitude)
         integrated = integrate(magnitude)
         result = eval_b(integrated) - eval_a(integrated)
     end

@@ -2,6 +2,7 @@
 Defines transform methods for FlowField structures. Should be included after types_and_constructors.jl and FlowFieldTransforms.jl.
 =#
 
+import ..ChebyCoeffs: make_state!, make_physical!, make_spectral!
 export make_physical!,
     make_spectral!,
     make_state!,

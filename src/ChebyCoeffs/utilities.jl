@@ -81,7 +81,7 @@ end
 function randomize!(u::ChebyCoeff{T}, magnitude::Real, decay::Real, bc_a::BC, bc_b::BC) where {T<:Number}
     N = numModes(u)
     start_state = state(u)
-    makeSpectral!(u)
+    make_spectral!(u)
     mag = magnitude # new variable so we don't mutate
 
     if T <: Complex
