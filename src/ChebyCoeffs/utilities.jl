@@ -6,6 +6,7 @@ export chebypoints,
     chebyshev,
     legendre_polynomial,
     chebyshev_polynomial,
+    randomize!,
     random_complex_chebycoeff,
     complexify,
     realify,
@@ -16,7 +17,7 @@ export chebypoints,
 # ============================================================================
 
 """Generate Chebyshev collocation points"""
-function chebypoints(N::Int, a::Real = -1, b::Real = 1)
+function chebypoints(N::Int, a::Real=-1, b::Real=1)
     @assert N > 0 "N must be positive"
     points = zeros(Float64, N)
     center = (b + a) / 2
@@ -30,7 +31,7 @@ function chebypoints(N::Int, a::Real = -1, b::Real = 1)
 end
 
 """Create pure Chebyshev polynomial T_n"""
-function chebyshev(::Type{T}, N::Int, n::Int, normalize::Bool = false) where {T<:Number}
+function chebyshev(::Type{T}, N::Int, n::Int, normalize::Bool=false) where {T<:Number}
     @assert 0 <= n < N "Polynomial degree must be in valid range"
     result = ChebyCoeff{T}(N, -1, 1, Spectral)
 
@@ -45,7 +46,7 @@ function chebyshev(::Type{T}, N::Int, n::Int, normalize::Bool = false) where {T<
 end
 
 # Convenience method for real case
-chebyshev(N::Int, n::Int, normalize::Bool = false) = chebyshev(Float64, N, n, normalize)
+chebyshev(N::Int, n::Int, normalize::Bool=false) = chebyshev(Float64, N, n, normalize)
 
 """Evaluate Chebyshev polynomial T_n(x)"""
 function chebyshev_polynomial(n::Int, x::Real)
@@ -72,30 +73,31 @@ function legendre_polynomial(n::Int, x::Real)
     return p_prev1
 end
 
+function rand_between(a::Real=-1.0, b::Real=1.0)
+    r = randn()
+    return (1 - r) * a + r * b
+end
 
-# ============================================================================
-# Complex utility functions
-# ============================================================================
+function randomize!(u::ChebyCoeff{T}, magnitude::Real, decay::Real, bc_a::BC, bc_b::BC) where {T<:Number}
+    N = numModes(u)
+    start_state = state(u)
+    makeSpectral!(u)
+    mag = magnitude # new variable so we don't mutate
 
-"""Generate random complex Chebyshev expansion with specified decay"""
-function random_complex_chebycoeff(
-    N::Int,
-    magnitude::Real = 1.0,
-    decay::Real = 0.8,
-    a::Real = -1,
-    b::Real = 1,
-    bc_a::BC = Diri,
-    bc_b::BC = Diri,
-)
-    u = ChebyCoeff{ComplexF64}(N, a, b, Spectral)
+    if T <: Complex
+        for n = 1:N
+            u.data[n] = mag * (rand_between(-1.0, 1.0) + rand_between(-1.0, 1.0) * im)
+            mag *= decay
+        end
 
-    mag = magnitude
-    for n = 1:N
-        u.data[n] = mag * (randn() + randn() * im)
-        mag *= decay
+    else
+        for n = 1:N
+            u.data[n] = mag * rand_between(-1.0, 1.0)
+            mag *= decay
+        end
     end
 
-    # Apply boundary conditions (simplified version)
+    # Apply boundary conditions
     if bc_a == Diri && bc_b == Diri && N >= 2
         # Homogeneous Dirichlet BCs: u(a) = u(b) = 0
         eval_a_val = eval_a(u)
@@ -109,7 +111,25 @@ function random_complex_chebycoeff(
     elseif bc_b == Diri && N >= 1
         u.data[1] -= eval_b(u)
     end
+    return u
+end
 
+# ============================================================================
+# Complex utility functions
+# ============================================================================
+
+"""Generate random complex Chebyshev expansion with specified decay"""
+function random_complex_chebycoeff(
+    N::Int,
+    magnitude::Real=1.0,
+    decay::Real=0.8,
+    a::Real=-1,
+    b::Real=1,
+    bc_a::BC=Diri,
+    bc_b::BC=Diri,
+)
+    u = ChebyCoeff{ComplexF64}(N, a, b, Spectral)
+    randomize!(u, magnitude, decay, bc_a, bc_b)
     return u
 end
 
@@ -127,6 +147,6 @@ function realify(u::ChebyCoeff{ComplexF64})
 end
 
 """Check if a complex expansion is effectively real"""
-function is_effectively_real(u::ChebyCoeff{ComplexF64}, tol::Real = 1e-14)
+function is_effectively_real(u::ChebyCoeff{ComplexF64}, tol::Real=1e-14)
     return all(abs.(imag.(u.data)) .< tol)
 end
