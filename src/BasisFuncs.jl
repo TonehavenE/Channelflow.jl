@@ -79,4 +79,19 @@ function BasisFunc(u::ChebyCoeff{T}, v::ChebyCoeff{T}, w::ChebyCoeff{T}, kx::Rea
     BasisFunc(domain, state, funcs)
 end
 
+# ======================
+# Geometry Comparsions
+# ======================
+
+function geom_congruent(f1::BasisFunc, f2::BasisFunc)
+    return geom_congruent(f1.domain, f2.domain)
+end
+
+function congruent(f1::BasisFunc, f2::BasisFunc)
+    return geom_congruent(f1, f2) && f1.domain.kx == f2.domain.kx && f1.domain.kz == f2.domain.kz
+end
+
+function is_interoperable(f::BasisFunc, g::BasisFunc)
+    return congruent(f, g) && f.state == g.state
+end
 end
