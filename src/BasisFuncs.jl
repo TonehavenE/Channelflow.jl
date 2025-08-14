@@ -238,4 +238,55 @@ function reconfig!(f::BasisFunc, g::BasisFunc)
     set_to_zero!(f)
 end
 
+# ======================
+# Transforms
+# ======================
+function chebyfft!(f::BasisFunc, t::Union{ChebyTransform,Nothing}=nothing)
+    @assert f.state == Physical "starting state must be physical"
+    if isnothing(t)
+        t = ChebyTransform(f.domain.Ny)
+    end
+    for i in eachindex(f.functions)
+        chebyfft!(f.functions[i], t)
+    end
+    f.state = Spectral
+end
+
+function ichebyfft!(f::BasisFunc, t::Union{ChebyTransform,Nothing}=nothing)
+    @assert f.state == Spectral "starting state must be spectral"
+    if isnothing(t)
+        t = ChebyTransform(f.domain.Ny)
+    end
+    for i in eachindex(f.functions)
+        ichebyfft!(f.functions[i], t)
+    end
+    f.state = physical
+end
+
+function make_spectral!(f::BasisFunc, t::Union{ChebyTransform,Nothing}=nothing)
+    if f.state == Spectral
+        return
+    end
+    for i in eachindex(f.functions)
+        make_spectral!(f.functions[i], t)
+    end
+    f.state = Spectral
+end
+
+function make_physical!(f::BasisFunc, t::Union{ChebyTransform,Nothing}=nothing)
+    if f.state == Physical
+        return
+    end
+    for i in eachindex(f.functions)
+        make_physical!(f.functions[i], t)
+    end
+    f.state = Physical
+end
+
+function make_state!(f::BasisFunc, s::FieldState, t::Union{ChebyTransform,Nothing}=nothing)
+    for i in eachindex(f.functions)
+        make_state!(f.functions[i], s, t)
+    end
+end
+
 end
