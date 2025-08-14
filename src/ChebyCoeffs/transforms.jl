@@ -74,26 +74,30 @@ function ichebyfft!(u::ChebyCoeff{T}, t::ChebyTransform) where {T<:Number}
 end
 
 # Convenience methods that create temporary transforms
-function make_spectral!(u::ChebyCoeff{T}) where {T<:Number}
+function make_spectral!(u::ChebyCoeff{T}, t::Union{ChebyTransform,Nothing}=nothing) where {T<:Number}
     if u.state == Physical
-        t = ChebyTransform(length(u.data))
+        if isnothing(t)
+            t = ChebyTransform(length(u.data))
+        end
         chebyfft!(u, t)
     end
 end
 
-function make_physical!(u::ChebyCoeff{T}) where {T<:Number}
+function make_physical!(u::ChebyCoeff{T}, t::Union{ChebyTransform,Nothing}=nothing) where {T<:Number}
     if u.state == Spectral
-        t = ChebyTransform(length(u.data))
+        if isnothing(t)
+            t = ChebyTransform(length(u.data))
+        end
         ichebyfft!(u, t)
     end
 end
 
-function make_state!(u::ChebyCoeff{T}, s::FieldState) where {T<:Number}
+function make_state!(u::ChebyCoeff{T}, s::FieldState, t::Union{ChebyTransform,Nothing}=nothing) where {T<:Number}
     if u.state != s
         if u.state == Physical
-            make_spectral!(u)
+            make_spectral!(u, t)
         else
-            make_physical!(u)
+            make_physical!(u, t)
         end
     end
 end
