@@ -79,7 +79,7 @@ function rand_between(a::Real=-1.0, b::Real=1.0)
 end
 
 function randomize!(u::ChebyCoeff{T}, magnitude::Real, decay::Real, bc_a::BC, bc_b::BC) where {T<:Number}
-    N = numModes(u)
+    N = length(u.data)
     start_state = state(u)
     make_spectral!(u)
     mag = magnitude # new variable so we don't mutate
@@ -111,6 +111,7 @@ function randomize!(u::ChebyCoeff{T}, magnitude::Real, decay::Real, bc_a::BC, bc
     elseif bc_b == Diri && N >= 1
         u.data[1] -= eval_b(u)
     end
+    make_state!(u, start_state)
     return u
 end
 

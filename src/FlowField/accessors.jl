@@ -1,6 +1,9 @@
 #=
 Defines accessor methods for FlowField structures. Should be included after types_and_constructors.jl.
 =#
+
+import ..ChebyCoeffs: num_modes
+
 export cmplx,
     set_cmplx!,
     num_x_gridpoints,

@@ -4,6 +4,7 @@ module FlowFields
 Puts together all of the FlowField source files into one coherent module.
 =#
 
+import ..ChebyCoeffs: congruent, num_modes
 using ..ChebyCoeffs
 
 include("FlowField/FlowFieldDomain.jl")
