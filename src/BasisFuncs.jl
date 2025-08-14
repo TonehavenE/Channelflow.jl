@@ -94,4 +94,64 @@ end
 function is_interoperable(f::BasisFunc, g::BasisFunc)
     return congruent(f, g) && f.state == g.state
 end
+
+# ======================
+# Accessors
+# ======================
+
+get_u(f::BasisFunc) = f.functions[1]
+get_v(f::BasisFunc) = f.functions[2]
+get_w(f::BasisFunc) = f.functions[3]
+
+function Base.getindex(f::BasisFunc, i::Int)
+    @assert i >= 1 "The index to BasisFunc must be 1 or greater"
+    @assert i <= f.domain.num_dimensions "The index to BasisFunc must be less than or equal to the number of dimensions."
+    return f.functions[i]
+end
+
+function Base.:(==)(f::BasisFunc, g::BasisFunc)
+    if !congruent(f, g)
+        return false
+    end
+
+    for i in eachindex(f.functions)
+        if f[i] != g[i]
+            return false
+        end
+    end
+    return true
+end
+
+function Base.:*(f::BasisFunc, g::BasisFunc)
+    @assert geom_congruent(f, g) "BasisFuncs must be geometrically congruent"
+    @assert f.state == Physical && g.state == Physical "BasisFuncs must be physical to multiply"
+
+    for i in eachindex(f)
+        f[i] *= g[i]
+    end
+
+    f.domain.kx += g.domain.kx
+    f.domain.kz += g.domain.kz
+
+    return f
+end
+
+function Base.:*(f::BasisFunc, c::Number)
+    for i in eachindex(f)
+        f[i] *= c
+    end
+    return f
+end
+
+function Base.:*(c::Number, f::BasisFunc)
+    return f * c
+end
+
+function Base.:+(f::BasisFunc, g::BasisFunc)
+    @assert is_interoperable(f, g)
+    for i in eachindex(f)
+        f[i] += g[i]
+    end
+end
+
 end
