@@ -29,4 +29,54 @@ function geom_congruent(d1::BasisFuncDomain, d2::BasisFuncDomain)
            d1.a == d2.a &&
            d1.b == d2.a
 end
+struct BasisFunc
+    domain::BasisFuncDomain
+    state::FieldState
+    functions::AbstractArray{ChebyCoeff}
+end
+
+# ===============
+# Constructors
+# ===============
+
+
+"""
+	BasisFunc()
+
+Empty (default) constructor for BasisFunc. 
+Initializes all values to 0. Should then call `resize` or `reconfigure`.
+"""
+function BasisFunc()
+    domain = BasisFuncDomain(0, 0, 0, 0, 0, 0, 0, 0)
+    BasisFunc(domain, Spectral, [])
+end
+
+"""
+	BasisFunc(Ny, f)
+
+Creates a basis function related to another BasisFunc `f`. 
+"""
+function BasisFunc(Ny::Int, f::BasisFunc)
+    domain = BasisFuncDomain(f.domain.num_dimensions, Ny, f.domain.kx, f.domain.kz, f.domain.Lx, f.domain.Lz, f.domain.a, f.domain.b)
+    state = f.state
+    u = Array{ChebyCoeff,domain.num_dimensions}
+
+    BasisFunc(domain, state, u)
+end
+
+
+"""
+3D vector field from existing component functions.
+"""
+function BasisFunc(u::ChebyCoeff{T}, v::ChebyCoeff{T}, w::ChebyCoeff{T}, kx::Real, kz::Real, Lx::Real, Lz::Real) where {T<:Complex}
+    num_dimensions = 3 # velocity field 
+    a, b = bounds(u)
+    Ny = num_modes(u)
+    state = state(u)
+    domain = BasisFuncDomain(num_dimensions, Ny, kx, kz, Lx, Lz, a, b)
+    funcs = [u, v, w]
+
+    BasisFunc(domain, state, funcs)
+end
+
 end
