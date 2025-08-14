@@ -9,4 +9,5 @@ using Test
     include("flowfielddomain_tests.jl")
     include("tensor_flowfield_tests.jl")
     include("metrics/metric_tests.jl")
+    include("tausolver_tests.jl")
 end

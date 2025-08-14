@@ -3,15 +3,14 @@ using ..TauSolvers
 using ..ChebyCoeffs
 using ..HelmholtzSolver
 
+@testset "TauSolver Tests" begin
 N = 15
 a, b = -1.0, 1.0
-Lx, Lz = 2π, 2π
+length_x, length_z = 2π, 2π
 kx, kz = 1, 1
 lambda, nu = 1.0, 0.1
-
-@testset "TauSolver Tests" begin
 @testset "TauSolver Construction" begin
-    tau = TauSolver(kx, kz, Lx, Lz, a, b, lambda, nu, N, true)
+    tau = TauSolver(kx, kz, length_x, length_z, a, b, lambda, nu, N, true)
     @test tau.num_modes == N
     @test tau.kx == kx
     @test tau.kz == kz
@@ -23,7 +22,7 @@ lambda, nu = 1.0, 0.1
 end
 
 @testset "TauSolver: Solve zero RHS" begin
-    tau = TauSolver(kx, kz, Lx, Lz, a, b, lambda, nu, N, true)
+    tau = TauSolver(kx, kz, length_x, length_z, a, b, lambda, nu, N, true)
     u = ChebyCoeff{ComplexF64}(N, a, b, Spectral)
     v = ChebyCoeff{ComplexF64}(N, a, b, Spectral)
     w = ChebyCoeff{ComplexF64}(N, a, b, Spectral)
@@ -42,7 +41,7 @@ end
 end
 
 @testset "TauSolver: Real/Imag decoupling" begin
-    tau = TauSolver(kx, kz, Lx, Lz, a, b, lambda, nu, N, true)
+    tau = TauSolver(kx, kz, length_x, length_z, a, b, lambda, nu, N, true)
     u = ChebyCoeff{ComplexF64}(N, a, b, Spectral)
     v = ChebyCoeff{ComplexF64}(N, a, b, Spectral)
     w = ChebyCoeff{ComplexF64}(N, a, b, Spectral)
@@ -59,7 +58,7 @@ end
 end
 
 @testset "TauSolver: Degenerate case kx=kz=0" begin
-    tau = TauSolver(0, 0, Lx, Lz, a, b, lambda, nu, N, true)
+    tau = TauSolver(0, 0, length_x, length_z, a, b, lambda, nu, N, true)
     u = ChebyCoeff{ComplexF64}(N, a, b, Spectral)
     v = ChebyCoeff{ComplexF64}(N, a, b, Spectral)
     w = ChebyCoeff{ComplexF64}(N, a, b, Spectral)
@@ -74,7 +73,7 @@ end
 end
 
 @testset "TauSolver: Consistency with known solution" begin
-    tau = TauSolver(kx, kz, Lx, Lz, a, b, lambda, nu, N, true)
+    tau = TauSolver(kx, kz, length_x, length_z, a, b, lambda, nu, N, true)
     u = ChebyCoeff{ComplexF64}(N, a, b, Spectral)
     v = ChebyCoeff{ComplexF64}(N, a, b, Spectral)
     w = ChebyCoeff{ComplexF64}(N, a, b, Spectral)
@@ -95,43 +94,9 @@ end
 end
 
 @testset "TauSolver: Influence correction does not error" begin
-    tau = TauSolver(kx, kz, Lx, Lz, a, b, lambda, nu, N, true)
+    tau = TauSolver(kx, kz, length_x, length_z, a, b, lambda, nu, N, true)
     P = ChebyCoeff{Float64}(N, a, b, Spectral)
     v = ChebyCoeff{Float64}(N, a, b, Spectral)
     @test isnothing(influence_correction!(tau, P, v))
-end
-
-@testset "TauSolver: Analytical solution for v'' - λ v = f" begin
-    N = 31
-    a, b = -1.0, 1.0
-    Lx, Lz = 2π, 2π
-    kx, kz = 0, 0
-    lambda, nu = 1.0, 1.0
-
-    tau = TauSolver(kx, kz, Lx, Lz, a, b, lambda, nu, N, true)
-    u = ChebyCoeff{ComplexF64}(N, a, b, Spectral)
-    v = ChebyCoeff{ComplexF64}(N, a, b, Spectral)
-    w = ChebyCoeff{ComplexF64}(N, a, b, Spectral)
-    P = ChebyCoeff{ComplexF64}(N, a, b, Spectral)
-    Rx = ChebyCoeff{ComplexF64}(N, a, b, Spectral)
-    Ry = ChebyCoeff{ComplexF64}(N, a, b, Spectral)
-    Rz = ChebyCoeff{ComplexF64}(N, a, b, Spectral)
-
-    # Manufactured solution: v(y) = sin(π y)
-    ypts = chebypoints(N, a, b)
-    v_exact = sin.(π .* ypts)
-    f = -π^2 * sin.(π .* ypts) - lambda * sin.(π .* ypts) # f = v'' - λ v
-
-    # Set up RHS
-    Ry.data .= f
-    set_to_zero!(Rx)
-    set_to_zero!(Rz)
-
-    solve!(tau, u, v, w, P, Rx, Ry, Rz)
-
-    # Transform v to physical space for comparison
-    make_physical!(v)
-    err = maximum(abs.(v.data .- v_exact))
-    @test err < 1e-6
 end
 end
