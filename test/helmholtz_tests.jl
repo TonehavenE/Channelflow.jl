@@ -111,4 +111,48 @@ end
         computed_mean = mean_value(u)
         @test abs(computed_mean - target_mean) < 1e-10
     end
+
+    #=
+    @testset "solve! with realview and imagview" begin
+        N = 31
+        a, b = -1.0, 1.0
+        λ, ν = 2.0, 1.0
+
+        # Manufactured solution: u(x) = sin(πx)
+        x = chebypoints(N, a, b)
+        u_exact = sin.(π .* x)
+        f = -ν * π^2 * sin.(π .* x) - λ * sin.(π .* x)
+
+        # Prepare complex ChebyCoeff
+        u_c = ChebyCoeff{ComplexF64}(N, a, b, Spectral)
+        rhs = ChebyCoeff{Float64}(f, a, b, Physical)
+        make_spectral!(rhs)
+
+        prob = HelmholtzProblem(N, a, b, λ, ν)
+
+        # Solve for real part
+        real_dest = realview(u_c)
+        solve!(prob, real_dest, rhs, 0.0, 0.0)
+        make_physical!(real_dest)
+
+        # Imaginary part should remain zero
+        imag_dest = imagview(u_c)
+        make_physical!(imag_dest)
+        @test all(isapprox.(imag_dest.data, 0.0, atol=1e-12))
+
+        # Real part should match analytical solution
+        make_physical!(real_dest)
+        err = maximum(abs.(real_dest.data .- u_exact))
+        @test err < 1e-6
+
+        # Now solve for imaginary part with a different RHS
+        rhs_im = ChebyCoeff{Float64}(cos.(π .* x), a, b, Physical)
+        make_spectral!(rhs_im)
+        solve!(prob, imag_dest, rhs_im, 0.0, 0.0)
+        make_physical!(imag_dest)
+        # Check that imagview is nonzero and realview is unchanged
+        @test maximum(abs.(imag_dest.data)) > 0
+        @test err < 1e-6  # real part still matches
+    end
+    =#
 end
