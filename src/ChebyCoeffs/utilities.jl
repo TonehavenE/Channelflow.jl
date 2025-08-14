@@ -10,6 +10,8 @@ export chebypoints,
     random_complex_chebycoeff,
     complexify,
     realify,
+    realview,
+    imagview,
     is_effectively_real
 
 # ============================================================================
@@ -145,6 +147,26 @@ function realify(u::ChebyCoeff{ComplexF64})
     else
         error("Cannot convert complex ChebyCoeff with non-zero imaginary parts to real")
     end
+end
+
+"""
+    realview(u::ChebyCoeff{ComplexF64})
+
+Returns a ChebyCoeff{Float64} that is a view into the real part of u's data.
+No allocation, no copy.
+"""
+function realview(u::ChebyCoeff{ComplexF64})
+    ChebyCoeff{Float64}(view(reinterpret(Float64, u.data), 1:2:length(u.data)*2), u.a, u.b, u.state)
+end
+
+"""
+    imagview(u::ChebyCoeff{ComplexF64})
+
+Returns a ChebyCoeff{Float64} that is a view into the imag part of u's data.
+No allocation, no copy.
+"""
+function imagview(u::ChebyCoeff{ComplexF64})
+    ChebyCoeff{Float64}(view(reinterpret(Float64, u.data), 2:2:length(u.data)*2), u.a, u.b, u.state)
 end
 
 """Check if a complex expansion is effectively real"""

@@ -123,5 +123,59 @@ using LinearAlgebra
         w_phys = u_phys * v_phys
         @test w_phys.data ≈ u_phys.data .* v_phys.data
     end
-
+    
+    @testset "realview and imagview basic correctness" begin
+        N = 8
+        a, b = -1.0, 1.0
+        u = ChebyCoeff{ComplexF64}(N, a, b, Spectral)
+        # Fill with known values
+        for i in 1:N
+            u.data[i] = complex(i, -i)
+        end
+    
+        rview = realview(u)
+        iview = imagview(u)
+    
+        @test rview.a == u.a
+        @test rview.b == u.b
+        @test rview.state == u.state
+        @test iview.a == u.a
+        @test iview.b == u.b
+        @test iview.state == u.state
+    
+        # Check that realview and imagview match the real and imag parts
+        @test all(rview.data .== real.(u.data))
+        @test all(iview.data .== imag.(u.data))
+    
+        # Check that modifying the view modifies the original
+        rview.data[3] = 42.0
+        @test real(u.data[3]) == 42.0
+        iview.data[4] = -99.0
+        @test imag(u.data[4]) == -99.0
+    
+        # Check that modifying the original modifies the view
+        u.data[5] = 7.0 + 8.0im
+        @test rview.data[5] == 7.0
+        @test iview.data[5] == 8.0
+    end
+    
+    @testset "realview and imagview: no allocation" begin
+        N = 4
+        u = ChebyCoeff{ComplexF64}(N, -1, 1, Spectral)
+        rview = realview(u)
+        iview = imagview(u)
+        # The views should not allocate new arrays
+        @test pointer(rview.data) == pointer(reinterpret(Float64, u.data))
+        @test pointer(iview.data) == pointer(reinterpret(Float64, u.data)) + sizeof(Float64)
+    end
+    
+    @testset "realview and imagview: edge cases" begin
+        N = 1
+        u = ChebyCoeff{ComplexF64}(N, -1, 1, Spectral)
+        u.data[1] = 3.0 + 4.0im
+        rview = realview(u)
+        iview = imagview(u)
+        @test rview.data[1] == 3.0
+        @test iview.data[1] == 4.0
+    end
 end

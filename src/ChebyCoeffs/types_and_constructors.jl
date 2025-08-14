@@ -57,7 +57,7 @@ Can be in Physical (values at Chebyshev points) or Spectral (coefficients) state
 Supports both real and complex coefficients.
 """
 mutable struct ChebyCoeff{T<:Number}
-    data::Vector{T}
+    data::AbstractArray{T}
     a::Real
     b::Real
     state::FieldState
@@ -78,13 +78,13 @@ mutable struct ChebyCoeff{T<:Number}
     end
 
     function ChebyCoeff{T}(
-        data::Vector{<:Number},
+        data::AbstractArray{<:Number},
         a::Real = -1,
         b::Real = 1,
         state::FieldState = Spectral,
     ) where {T<:Number}
         @assert b > a "Upper bound must be greater than lower bound"
-        new{T}(T.(data), Float64(a), Float64(b), state)
+        new{T}(data, Float64(a), Float64(b), state)
     end
 
     # Copy constructor with different size
