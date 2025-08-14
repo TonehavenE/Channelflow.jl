@@ -289,4 +289,131 @@ function make_state!(f::BasisFunc, s::FieldState, t::Union{ChebyTransform,Nothin
     end
 end
 
+# ======================
+# Norms
+# ======================
+# TODO: Implement norms (just callouts to ChebyCoeff ones)
+# should this be in a separate file? probably
+
+
+# ======================
+# Derivative Operators
+# ======================
+
+"""
+	xdiff!(f, dfdx)
+
+Calculates the x-derivative of `f` and stores it in `dfdx`.
+"""
+function xdiff!(f::BasisFunc, dfdx::BasisFunc)
+    @assert geom_congruent(f, dfdx) "the destination must be geometrically congruent to the function"
+    dfdx.functions = f.functions
+    dfdx.state = f.state
+    dfdx *= Complex(0.0, 2pi * f.domain.kx / f.domain.Lx)
+end
+
+function xdiff(f::BasisFunc)
+    dfdx = BasisFunc(f.domain.Ny, f)
+    xdiff!(f, dfdx)
+    return dfdx
+end
+
+"""
+	ydiff!(f, dfdz)
+
+Calculates the y-derivative of `f` and stores it in `dfdy`.
+"""
+function ydiff!(f::BasisFunc, dfdy::BasisFunc)
+    @assert geom_congruent(f, dfdy) "the destination must be geometrically congruent to the function"
+    dfdy.functions = f.functions
+    dfdy.state = f.state
+    dfdy *= Complex(0.0, 2pi * f.domain.kz / f.domain.Lz)
+end
+
+function ydiff(f::BasisFunc)
+    dfdy = BasisFunc(f.domain.Ny, f)
+    ydiff!(f, dfdy)
+    return dfdy
+end
+
+"""
+	zdiff!(f, dfdz)
+Calculates the z-derivative of `f` and stores it in `dfdz`.
+"""
+function zdiff!(f::BasisFunc, dfdz::BasisFunc)
+    @assert geom_congruent(f, dfdz) "the destination must be geometrically congruent to the function"
+    dfdz.functions = f.functions
+    dfdz.state = f.state
+    dfdz *= Complex(0.0, 2pi * f.domain.kz / f.domain.Lz)
+end
+
+function zdiff(f::BasisFunc)
+    dfdz = BasisFunc(f.domain.Ny, f)
+    zdiff!(f, dfdz)
+    return dfdz
+end
+
+"""
+	divergence!(f, divf)
+
+Calculates the divergence of `f` and stores it in `divf`.
+"""
+function divergence!(f::BasisFunc, divf::BasisFunc)
+    @assert f.state == Spectral
+    @assert f.domain.num_dimensions == 3
+    resize!(divf, f.domain.Ny, 1)
+    set_bounds!(divf, f.domain.Lx, f.domain.Lz, f.domain.a, f.domain.b)
+    set_kx_kz!(divf, f.domain.kx, f.domain.kz)
+
+    tmp = ChebyCoeff(f[1])
+    tmp *= Complex(0, 2pi * f.domain.kx / f.domain.Lx)
+    divf[1] = tmp
+
+    tmp = derivative(f[2])
+    divf[1] += tmp
+
+    tmp = ChebyCoeff(f[2])
+    tmp *= Complex(0.0, 2pi * f.domain.kz / f.domain.Lz)
+    divf[1] += tmp
+end
+
+function divergence(f::BasisFunc)
+    divf = BasisFunc(f.domain.Ny, f)
+    divergence!(f, divf)
+    return divf
+end
+
+"""
+	laplacian!(f, laplf)
+
+Calculates the Laplacian of `f` and stores it inplace in `laplf`.
+"""
+function laplacian!(f::BasisFunc, laplf::BasisFunc)
+    @assert f.state == Spectral
+
+    # make laplf's functions the same as f
+    for i in eachindex(f.functions)
+        laplf[i] = ChebyCoeff(f[i])
+    end
+
+    c = -4pi^2 * ((f.domain.kx / f.domain.Lx)^2 + (f.domain.kz / f.domain.Lz)^2)
+
+    for i in eachindex(f.functions)
+        laplf[i] *= c
+        tmp = derivative2(f[i])
+        laplf[i] += tmp
+    end
+end
+
+"""
+	laplacian(f)
+
+Returns a new BasisFunc equal to the Laplacian of `f`.
+"""
+function laplacian(f::BasisFunc)
+    laplf = BasisFunc(f.domain.Ny, f)
+    laplacian!(f, laplf)
+    return laplf
+end
+
 end
