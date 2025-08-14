@@ -416,4 +416,63 @@ function laplacian(f::BasisFunc)
     return laplf
 end
 
+# ======================
+# Fix Boundary Conditions
+# ======================
+
+"""
+	ubc_fix!(u, a_bc, b_bc)
+
+Impose the boundary conditions at the bounds on `u`.
+Modifies in place. 
+"""
+function ubc_fix!(u::ChebyCoeff, a_bc::BC, b_bc::BC)
+    ua, ub = bounds(u)
+    set_bounds!(u, -1.0, 1.0)
+
+    if a_bc == Diri && b_bc == Diri
+        u_at_a, u_at_b = eval_a(u), eval_b(u)
+        u[1] -= 0.5 * (u_at_a + u_at_b)
+        u[2] -= 0.5 * (u_at_a - u_at_b)
+    elseif a_bc == Diri
+        u[1] -= eval_a(u)
+    elseif b_bc == Diri
+        u[2] -= eval_b(u)
+    end
+
+    set_bounds!(u, ua, ub)
+end
+
+"""
+	vbc_fix!(v, a_bc, b_bc)
+
+Impose the boundary conditions at the bounds on `v`.
+Modifies in place. 
+"""
+function vbc_fix!(v::ChebyCoeff, a_bc::BC, b_bc::BC)
+    va, vb = bounds(v)
+    set_bounds!(v, -1.0, 1.0)
+
+    if a_bc == Diri && b_bc == Diri
+        dvdy = derivative(v)
+        a = eval_a(v)
+        b = eval_b(v)
+        c = eval_a(dvdy)
+        d = eval_b(dvdy)
+
+        v[1] -= 0.5 * (a + b) + 0.125 * (c - d)
+        v[2] -= 0.5625 * (b - a) - 0.0625 * (c + d)
+        v[3] -= 0.125 * (d - c)
+        v[4] -= 0.0625 * (a - b + c + d)
+    elseif a_bc == Diri
+        dvdy = derivative(v)
+        v[1] -= eval_a(v)
+        v[2] -= eval_a(dvdy)
+    elseif b_bc == Diri
+        dvdy = derivative(v)
+        v[1] -= eval_b(v)
+        v[2] -= eval_b(dvdy)
+    end
+    set_bounds!(v, va, vb)
+end
 end
