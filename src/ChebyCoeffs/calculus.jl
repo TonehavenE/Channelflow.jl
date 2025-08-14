@@ -8,6 +8,7 @@ export derivative, derivative2, integrate
 # Differentiation and Integration - work for both real and complex
 # ============================================================================
 
+# TODO: Make these operations work in place instead
 """
 Compute derivative of Chebyshev expansion.
 

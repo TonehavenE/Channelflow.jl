@@ -182,6 +182,8 @@ struct HelmholtzProblem
 end
 
 """
+    solve!(h::HelmholtzProblem, u, f, ua, ub)
+
 Solve the Helmholtz equation with Dirichlet boundary conditions.
 
 # Arguments
@@ -220,6 +222,8 @@ end
 
 
 """
+    solve!(h::HelmholtzProblem, u, f, umean, ua, ub)
+
 Extended solver that handles both forcing and mean constraint.
 
 Let u = uf + um.
