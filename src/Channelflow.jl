@@ -8,6 +8,7 @@ include("HelmholtzSolver.jl")
 include("FlowField.jl")
 include("Metrics.jl")
 include("BasisFuncs.jl")
+include("TauSolvers.jl")
 
 @reexport using .ChebyCoeffs
 @reexport using .BandedTridiags
@@ -15,5 +16,6 @@ include("BasisFuncs.jl")
 @reexport using .FlowFields
 @reexport using .Metrics
 @reexport using .BasisFuncs
+@reexport using .TauSolvers
 
 end
