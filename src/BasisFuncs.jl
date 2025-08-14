@@ -1,5 +1,23 @@
 module BasisFuncs
 
+import ..ChebyCoeffs: set_to_zero!, make_state!, make_physical!, make_spectral!, set_bounds!, congruent, chebyfft!, ichebyfft!
+import ..FlowFields: geom_congruent
+using ..ChebyCoeffs
+
+export BasisFuncDomain,
+    BasisFunc,
+    geom_congruent,
+    congruent,
+    is_interoperable,
+    get_u,
+    get_v,
+    get_w,
+    set_state!,
+    set_bounds!,
+    set_kx_kz!,
+    set_to_zero!
+
+
 struct BasisFuncDomain
     num_dimensions::Int
     Ny::Int
@@ -29,6 +47,7 @@ function geom_congruent(d1::BasisFuncDomain, d2::BasisFuncDomain)
            d1.a == d2.a &&
            d1.b == d2.a
 end
+
 struct BasisFunc
     domain::BasisFuncDomain
     state::FieldState
@@ -475,4 +494,45 @@ function vbc_fix!(v::ChebyCoeff, a_bc::BC, b_bc::BC)
     end
     set_bounds!(v, va, vb)
 end
+
+# TODO Finish implementing these methods
+"""
+	randomize_3d!(f, magnitude, decay, bc_a, bc_b)
+
+Randomizes the vector valued basis function `f`. 
+"""
+function randomize_3d!(f::BasisFunc, magnitude::Real, decay::Real, bc_a::BC, bc_b::BC)
+    @assert f.domain.num_dimensions == 3 "Randomize defined for vector valued functions only."
+    set_to_zero!(f)
+    set_state!(f, Spectral)
+    Ny, a, b = f.domain.Ny, f.domain.a, f.domain.b
+
+    u = ChebyCoeff{Complex}(Ny, a, b, Spectral)
+    v = ChebyCoeff{Complex}(Ny, a, b, Spectral)
+    w = ChebyCoeff{Complex}(Ny, a, b, Spectral)
+    vy = ChebyCoeff{Complex}(Ny, a, b, Spectral)
+
+    # make u, v part
+    if f.domain.kx == 0
+        randomize!(u, magnitude, decay, bc_a, bc_b)
+    else
+        randomize!(v, magnitude, decay, bc_a, bc_b)
+    end
+
+
+end
+
+"""
+	randomize!(f, magnitude, decay, bc_a, bc_b)
+
+Randomizes the basis function `f`. 
+If f is 3 dimensional, we specifically scale to the domain.
+"""
+function randomize!(f::BasisFunc, magnitude::Real, decay::Real, bc_a::BC, bc_b::BC)
+    if f.domain.num_dimensions == 3
+        return randomize_3d!(f, magnitude, decay, bc_a, bc_b)
+    end
+
+end
+
 end
