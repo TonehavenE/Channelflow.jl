@@ -3,7 +3,7 @@ Basic arithmetic and manipulation operations for ChebyCoeff type.
 Must be included after types_and_constructors.jl.
 =#
 
-export bounds, domain_length, num_modes, state, setBounds!, set_state!, set_to_zero!
+export bounds, domain_length, num_modes, state, set_bounds!, set_state!, set_to_zero!
 
 function congruent_structure(u::ChebyCoeff, v::ChebyCoeff)
     return (length(u) == length(v) && u.a == v.a && u.b == v.b && u.state == v.state)
@@ -25,7 +25,7 @@ domain_length(u::ChebyCoeff) = u.b - u.a
 num_modes(u::ChebyCoeff) = length(u.data)
 state(u::ChebyCoeff) = u.state
 
-function setBounds!(u::ChebyCoeff, a::Real, b::Real)
+function set_bounds!(u::ChebyCoeff, a::Real, b::Real)
     @assert b > a "Upper bound must be greater than lower bound"
     u.a = Float64(a)
     u.b = Float64(b)
