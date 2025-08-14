@@ -154,4 +154,88 @@ function Base.:+(f::BasisFunc, g::BasisFunc)
     end
 end
 
+# ================
+# Mutators
+# ================
+#
+"""
+	set_state!(f, state)
+
+Set's the state of `f` to `state`. Also set's each of its functions.
+"""
+function set_state!(f::BasisFunc, state::FieldState)
+    @assert state == Spectral || state == Physical "State must be either physical or spectral."
+    for i = 1:f.domain.num_dimensions
+        set_state!(f.functions[i], state)
+    end
+    f.state = state
+end
+
+"""
+	set_bounds!(f, Lx, Lz, a, b)
+
+Set `f` to have a domain size of Lx, Lz, a, and b.
+Also sets those bounds to each of the vector component ChebyCoeffs.
+"""
+function set_bounds!(f::BasisFunc, Lx::Real, Lz::Real, a::Real, b::Real)
+    f.domain.Lx = Lx
+    f.domain.Lz = Lz
+    f.domain.a = a
+    f.domain.b = b
+    for i in eachindex(f.functions)
+        set_bounds!(f.functions[i], a, b)
+    end
+end
+
+"""
+	set_kx_kz!(f, kz, kx)
+
+Set `f` domain to kx and kz.
+"""
+function set_kx_kz!(f::BasisFunc, kz::Real, kx::Real)
+    f.domain.kx = kx
+    f.domain.kz = kz
+end
+
+"""
+	set_to_zero!(f)
+
+Sets all of `f`'s functions to 0.
+"""
+function set_to_zero!(f::BasisFunc)
+    for func in f.functions
+        set_to_zero!(func)
+    end
+end
+
+"""
+	resize!(f, Ny, Nd)
+
+Resizes `f` to a domain length of `Ny` and a dimensionality of `Nd`.
+"""
+function Base.resize!(f::BasisFunc, Ny::Int, Nd::Int)
+    if f.domain.num_dimensions != Nd
+        f.domain.num_dimensions = Nd
+        Base.resize!(f.functions, Nd)
+    end
+    f.domain.Ny = Ny
+    for i = 1:f.domain.num_dimensions
+        resize!(f[i], Ny)
+    end
+end
+
+"""
+	reconfig!(f, g)
+
+Reconfigures `f` in place to have the same properties as `g`.
+Clears `f`'s functions.
+"""
+function reconfig!(f::BasisFunc, g::BasisFunc)
+    resize!(f, g.domain.Ny, g.domain.num_dimensions)
+    set_bounds!(f, g.domain.Lx, g.domain.Lz, g.domain.a, g.domain.b)
+    set_kx_kz!(f, g.domain.kx, g.domain.kz)
+    set_state!(f, g.state)
+    set_to_zero!(f)
+end
+
 end
