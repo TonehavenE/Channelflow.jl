@@ -15,5 +15,6 @@ include("FlowField/base_ops.jl")
 include("FlowField/transforms.jl")
 include("FlowField/utilities.jl")
 include("FlowField/geometry.jl")
+include("FlowField/calculus.jl")
 
 end
