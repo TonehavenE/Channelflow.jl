@@ -9,12 +9,12 @@ export geom_congruent, congruent, resize!, rescale!
 # Congruence Methods  
 # ===========================
 
-function geom_congruent(ff1::FlowField, ff2::FlowField; eps::Real = 1e-13)
-    return geom_congruent(ff1.domain, ff2.domain; eps = eps)
+function geom_congruent(ff1::FlowField, ff2::FlowField; eps::Real=1e-13)
+    return geom_congruent(ff1.domain, ff2.domain; eps=eps)
 end
 
-function congruent(ff1::FlowField, ff2::FlowField; eps::Real = 1e-13)
-    return congruent(ff1.domain, ff2.domain; eps = eps)
+function congruent(ff1::FlowField, ff2::FlowField; eps::Real=1e-13)
+    return congruent(ff1.domain, ff2.domain; eps=eps)
 end
 
 
@@ -30,7 +30,7 @@ end
 Resize FlowField to new dimensions and domain.
 All data is lost and field is reset to zero.
 """
-function resize!(
+function Base.resize!(
     ff::FlowField{T},
     Nx::Int,
     Ny::Int,
