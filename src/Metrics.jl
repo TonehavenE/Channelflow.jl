@@ -18,5 +18,5 @@ include("Metrics/cheby_metrics.jl")
 include("Metrics/flow_metrics.jl")
 
 export L2Norm,
-    L2Norm2, L2InnerProduct, chebyNorm, chebyNorm2, chebyInnerProduct, LinfNorm, L1Norm
+    L2Norm2, L2InnerProduct, chebyNorm, chebyNorm2, chebyInnerProduct, LinfNorm, L1Norm, L2Dist2, L2Dist
 end

@@ -39,6 +39,17 @@ end
 L2Norm(u::ChebyCoeff{T}, normalize::Bool=true) where {T<:Number} =
     sqrt(L2Norm2(u, normalize))
 
+function L2Dist2(u::ChebyCoeff{T}, v::ChebyCoeff{S}, normalize::Bool=true) where {T<:Number,S<:Number}
+    @assert congruent_structure(u, v) "Arguments must have compatible structure"
+    @assert u.state == Spectral "Must be in Spectral state"
+    tmp = ChebyCoeff{T}(u)
+    tmp -= v
+    return L2Norm2(tmp, normalize)
+end
+
+L2Dist(u::ChebyCoeff{T}, v::ChebyCoeff{S}, normalize::Bool=true) where {T<:Number,S<:Number} =
+    sqrt(L2Dist2(u, v, normalize))
+
 function L2InnerProduct(
     u::ChebyCoeff{T},
     v::ChebyCoeff{S},
