@@ -3,7 +3,7 @@ Basic arithmetic and manipulation operations for ChebyCoeff type.
 Must be included after types_and_constructors.jl.
 =#
 
-export bounds, domain_length, num_modes, state, set_bounds!, set_state!, set_to_zero!
+export bounds, domain_length, num_modes, state, set_bounds!, set_state!, set_to_zero!, congruent_structure, congruent, copy, copy!, display
 
 function congruent_structure(u::ChebyCoeff, v::ChebyCoeff)
     return (length(u) == length(v) && u.a == v.a && u.b == v.b && u.state == v.state)
@@ -78,6 +78,16 @@ function Base.:*(u::ChebyCoeff{T}, v::ChebyCoeff{S}) where {T<:Number,S<:Number}
     return result
 end
 
+function Base.copy(u::ChebyCoeff{T}) where {T<:Number}
+    ChebyCoeff{T}(copy(u.data), u.a, u.b, u.state)
+end
+
+function Base.copy!(dest::ChebyCoeff{T}, src::ChebyCoeff{S}) where {T<:Number,S<:Number}
+    @assert congruent_structure(dest, src) "ChebyCoeff objects must have compatible structure"
+    dest.data .= src.data
+    return dest
+end
+
 
 Base.:(==)(u::ChebyCoeff, v::ChebyCoeff) = congruent_structure(u, v) && u.data == v.data
 
@@ -95,3 +105,10 @@ Base.imag(u::ChebyCoeff{T}) where {T<:Real} =
     ChebyCoeff{T}(zeros(T, length(u.data)), u.a, u.b, u.state)
 Base.imag(u::ChebyCoeff{T}) where {T<:Complex} =
     ChebyCoeff{real(T)}(imag.(u.data), u.a, u.b, u.state)
+
+function Base.display(u::ChebyCoeff)
+    println("ChebyCoeff of length $(length(u)), bounds=($(u.a), $(u.b)), state=$(u.state)")
+    for i in eachindex(u.data )
+        println("  [$i] = ", u.data[i])
+    end
+end
