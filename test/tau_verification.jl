@@ -382,5 +382,5 @@ end
 
 # Run the comprehensive test
 @testset "Comprehensive TauSolver Tests" begin
-    @test comprehensive_tau_solver_test(20, true)  # Run 20 tests, non-verbose
+    @test comprehensive_tau_solver_test(20, false)  # Run 20 tests, non-verbose
 end

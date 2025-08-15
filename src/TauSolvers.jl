@@ -456,45 +456,19 @@ function verify(tau::TauSolver, u::ChebyCoeff{ComplexF64}, v::ChebyCoeff{Complex
     # Re and Im parts decouple
     Ry_grad = derivative(realview(Ry))
     r_re = ChebyCoeff(Ry_grad.data, Ry_grad.a, Ry_grad.b, Ry_grad.state)
-    if verbose
-        println("Ry_grad:")
-        display(Ry_grad)
-        println("r_re before correction:")
-        display(r_re)
-    end
     for n = 1:N
         r_re[n] -= tau.two_pi_kxLx * imag(Rx[n]) + tau.two_pi_kzLz * imag(Rz[n])
-    end
-    if verbose
-        println("r_re after correction:")
-        display(r_re)
     end
     
     Ry_grad_im = derivative(imagview(Ry))
     r_im = ChebyCoeff(Ry_grad_im.data, Ry_grad_im.a, Ry_grad_im.b, Ry_grad_im.state)
-    if verbose
-        println("Ry_grad_im:")
-        display(Ry_grad_im)
-        println("r_im before correction:")
-        display(r_im)
-    end
     for n = 1:N
-        println("Rx.re[$n] = $(real(Rx[n]))")
-        println("Rz.re[$n] = $(real(Rz[n]))")
         r_im[n] += tau.two_pi_kxLx * real(Rx[n]) + tau.two_pi_kzLz * real(Rz[n])
-    end
-    if verbose
-        println("r_im after correction:")
-        display(r_im)
     end
     
     # Combine real and imaginary parts
     for n = 1:N
         r[n] = complex(r_re[n], r_im[n])
-    end
-    if verbose
-        println("div R coefficients:")
-        display(r)
     end
     
     terr = tauDist(lhs, r)
