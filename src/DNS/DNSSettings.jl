@@ -25,6 +25,7 @@ export VelocityScale,
     Divergence,
     SkewSymmetric,
     Alternating,
+    Alternating_,
     LinearAboutProfile,
     Dealiasing,
     NoDealiasing,
@@ -42,13 +43,15 @@ export VelocityScale,
     adjust!,
     adjust_to_middle!,
     adjust_to_desired!,
-    adjust_for_T!
+    adjust_for_T!,
+    dealias_xz,
+    dealias_y
 
 @enum VelocityScale WallScale ParabolicScale
 @BaseFlow ZeroBase LinearBase ParabolicBase LaminarBase SuctionBase ArbitraryBase
 @MeanConstraint PressureGradient BulkVelocity
 @TimeStepMethod CNFE1 CNAB2 CNRK2 SMRK2 SBDF1 SBDF2 SBDF3 SBDF4
-@enum NonlinearMethod Rotational Convection Divergence SkewSymmetric Alternating LinearAboutProfile
+@enum NonlinearMethod Rotational Convection Divergence SkewSymmetric Alternating Alternating_ LinearAboutProfile
 @enum Dealiasing NoDealiasing DealiasXZ DealiasY DealiasXYZ
 @enum Verbosity Silent PrintTime PrintTicks VerifyTauSolve PrintAll
 
@@ -128,39 +131,39 @@ struct DNSFlags
 end
 
 function DNSFlags(;
-    nu = 0.0025,
-    dPdx = 0.0,
-    dPdz = 0.0,
-    Ubulk = 0.0,
-    Wbulk = 0.0,
-    Uwall = 1.0,
-    ulowerwall = 0.0,
-    uupperwall = 0.0,
-    wlowerwall = 0.0,
-    wupperwall = 0.0,
-    theta = 0.0,
-    Vsuck = 0.0,
-    rotation = 0.0,
-    t0 = 0.0,
-    T = 20.0,
-    dT = 1.0,
-    dt = 0.03125,
-    variabledt = true,
-    dtmin = 0.001,
-    dtmax = 0.2,
-    CFLmin = 0.4,
-    CFLmax = 0.6,
-    symmetryprojectioninterval = 100.0,
-    baseflow = :LaminarBase,
-    constraint = :PressureGradient,
-    timestepping = :SBDF3,
-    initstepping = :SMRK2,
-    nonlinearity = :Rotational,
-    dealiasing = :DealiasXZ,
-    bodyforce = nothing,
-    taucorrection = true,
-    verbosity = :PrintTicks,
-    logstream = stdout,
+    nu=0.0025,
+    dPdx=0.0,
+    dPdz=0.0,
+    Ubulk=0.0,
+    Wbulk=0.0,
+    Uwall=1.0,
+    ulowerwall=0.0,
+    uupperwall=0.0,
+    wlowerwall=0.0,
+    wupperwall=0.0,
+    theta=0.0,
+    Vsuck=0.0,
+    rotation=0.0,
+    t0=0.0,
+    T=20.0,
+    dT=1.0,
+    dt=0.03125,
+    variabledt=true,
+    dtmin=0.001,
+    dtmax=0.2,
+    CFLmin=0.4,
+    CFLmax=0.6,
+    symmetryprojectioninterval=100.0,
+    baseflow=:LaminarBase,
+    constraint=:PressureGradient,
+    timestepping=:SBDF3,
+    initstepping=:SMRK2,
+    nonlinearity=:Rotational,
+    dealiasing=:DealiasXZ,
+    bodyforce=nothing,
+    taucorrection=true,
+    verbosity=:PrintTicks,
+    logstream=stdout,
 )
     return DNSFlags(
         nu,
@@ -380,6 +383,14 @@ function adjust_for_T!(ts::TimeStep, T::Real)
     ts.dT = dT
     ts.CFL = CFL
     return adjustment
+end
+
+function dealias_xz(flags::DNSFlags)
+    return flags.dealiasing == DealiasXZ || flags.dealiasing == DealiasXYZ
+end
+
+function dealias_y(flags::DNSFlags)
+    return flags.dealiasing == DealiasY || flags.dealiasing == DealiasXYZ
 end
 
 end
