@@ -45,7 +45,12 @@ export cmplx,
     is_scalar_field,
     is_vector_field,
     is_matrix_field,
-    is_symmetric_field
+    is_symmetric_field,
+    zero_last_mode,
+    spectral_diff,
+    Dx,
+    Dz
+
 
 # ===========================
 # Element Access Methods
@@ -184,3 +189,41 @@ is_scalar_field(ff::FlowField) = ff.domain.tensor_shape == SCALAR_TENSOR
 is_vector_field(ff::FlowField) = ff.domain.tensor_shape == VECTOR_TENSOR
 is_matrix_field(ff::FlowField) = ff.domain.tensor_shape == MATRIX_TENSOR
 is_symmetric_field(ff::FlowField) = ff.domain.tensor_shape == SYMMETRIC_TENSOR
+
+zero_last_mode(k, kmax, n) = ((k == kmax) && (n % 2 == 1)) ? 0 : 1
+
+function spectral_diff(n::Int)
+    if n == 0
+        return Complex(1.0, 0.0)
+    elseif n == 1
+        return Complex(0.0, 1.0)
+    elseif n == 2
+        return Complex(-1.0, 0.0)
+    elseif n == 3
+        return Complex(0.0, -1.0)
+    else
+        error("n % 4 > 4 !!")
+    end
+end
+
+function Dz(ff::FlowField, mz::Int, n::Int)
+    rot = spectral_diff(n % 4)
+    kz = mz_to_kz(ff, mz)
+    return rot * ((2 * pi * kz / ff.domain.Lz)^n * zero_last_mode(kz, kz_max(ff), n))
+end
+
+function Dz(ff::FlowField, mz::Int)
+    kz = mz_to_kz(ff, mz)
+    return Complex(0.0, 2 * pi * kz / ff.domain.Lz * zero_last_mode(kz, kz_max(ff), 1))
+end
+
+function Dx(ff::FlowField, mx::Int, n::Int)
+    rot = spectral_diff(n % 4)
+    kx = mx_to_kx(ff, mx)
+    return rot * ((2 * pi * kx / ff.domain.Lx)^n * zero_last_mode(kx, kx_max(ff), n))
+end
+
+function Dx(ff::FlowField, mx::Int)
+    kx = mx_to_kx(ff, mx)
+    return Complex(0.0, 2 * pi * kx / ff.domain.Lx * zero_last_mode(kx, kx_max(ff), 1))
+end
