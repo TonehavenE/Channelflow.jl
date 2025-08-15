@@ -97,7 +97,7 @@ mutable struct ChebyCoeff{T<:Number}
 end
 
 function ChebyCoeff{T}(u::ChebyCoeff{T}) where {T<:Number}
-    ChebyCoeff(u.data, u.a, u.b, u.state)
+    ChebyCoeff{T}(copy(u.data), u.a, u.b, u.state)
 end
 
 # ============================================================================
