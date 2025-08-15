@@ -10,4 +10,5 @@ using Test
     include("tensor_flowfield_tests.jl")
     include("metrics/metric_tests.jl")
     include("tausolver_tests.jl")
+    include("tau_verification.jl")
 end
