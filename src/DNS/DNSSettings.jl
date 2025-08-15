@@ -113,16 +113,122 @@ end
 function adjust!(ts::TimeStep, CFL::Real)
     ts.CFL = CFL
     if ts.variable && (CFL <= ts.CFLmin || CFL >+ ts.CFL_max)
-        return adjust_to_middle(ts, CFL)
+        return adjust_to_middle!(ts, CFL)
     end
     return false
 end
 
-function adjust_to_middle(ts::TimeStep, CFL::Real)
+function iround(x::Real)
+    if x > 0.0
+        return Int(x + 0.5)
+    else
+        return Int(x - 0.5)
+    end
+end
+
+function adjust_to_middle!(ts::TimeStep, CFL::Real)
     if (ts.dt_min == ts.dt_max) || ts.dT == 0.0 
         return false
     end
-    #TODO finish implementing this
+
+    n = max(iround(2 * ts.n * ts.CFL / (ts.CFL_min + ts.CFL_max)), 1)
+    dt = ts.dT / n
+
+    # adjust dt to be within bounds 
+    while dt < ts.dt_min && n >= 2 && ts.dT != 0
+        dt = ts.dT / n
+        n -= 1
+    end
+
+    while dt > ts.dt_max && n <= typemax(Int64) && ts.dT != 0
+        dt = ts.dT / n
+        n += 1
+    end
+
+    CFL *= dt / ts.dt
+
+    adjustment = (n != ts.n)
+    if adjustment
+        ts.n = n
+        ts.dt = dt
+        ts.CFL = CFL
+    end
+    return adjustment
+end
+
+function adjust_to_desired!(ts:TimeStep, a::Real, a_desired::Real)
+    ai = a
+    if (ts.dt_min == ts.dt_max) || ts.dT == 0.0 
+        return false
+    end
+
+    n = max(iround(ts.n * a / (a_desired)), 1)
+    dt = ts.dT / n
+
+    while dt < ts.dt_min && n >= 2 && ts.dT != 0
+        dt = ts.dT / n
+        n -= 1
+    end
+
+    while dt > ts.dt_max && n <= typemax(Int64) && ts.dT != 0
+        dt = ts.dT / n
+        n += 1
+    end
+
+    a *= dt / ts.dt
+
+    adjustment = (n != ts.n)
+    if adjustment
+        ts.n = n
+        ts.dt = dt
+    end
+    return adjustment
+end
+
+function adjust!(ts::TimeStep, a::Real, a_max::Real)
+    if ts.variable && a >= a_max
+        return adjust_to_middle!(ts, a)
+    end
+    return false
+end
+
+function adjust_for_T!(ts::TimeStep, T::Real)
+    ts.T = T
+    @assert T >= 0 "T must be positive or zero"
+
+    if T == 0
+        adjustment = (ts.dt == 0) ? false : true
+        ts.dt = 0.0
+        ts.n = 0
+        ts.dT = 0
+        ts.T = 0
+        return adjustment
+    end
+
+    N = max(iround(T / ts.dT), 1)
+    dT = T / N
+    n = max(iround(dT/ts.dt), 1)
+    dt = dT / n
+
+    while dt < ts.dt_min && n >= 2 && dT != 0
+        dt = dT / n
+        n -= 1
+    end
+
+    while dt > ts.dt_max && n <= typemax(Int64) && dT != 0
+        dt = dT / n
+        n += 1
+    end
+
+    CFL = dt * ts.CFL / ts.dt
+
+    adjustment = (dt == ts.dt) ? false : true
+    ts.n = n
+    ts.N = N
+    ts.dt = dt 
+    ts.dT = dT
+    ts.CFL = CFL
+    return adjustment
 end
 
 end
