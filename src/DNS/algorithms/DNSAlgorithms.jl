@@ -73,7 +73,7 @@ mutable struct DNSAlgorithmCommon
     num_initsteps::Int
     t::Real
     lambda_t::Vector{Real} # time stepping factors for implicit solver
-    equations::Vector{Any} # TODO implement equations
+    equations::Equation # TODO implement equations
     symmetries::Vector{Vector{Any}} # TODO implement symmetries
 end
 

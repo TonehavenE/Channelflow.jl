@@ -5,11 +5,11 @@ function simple_channel_flow_example()
 
     # Domain parameters
     Nx, Ny, Nz = 16, 17, 16  # Small grid for testing
-    Lx, Lz = 4π, 2π
+    Lx, Lz = 2π, 1π
     a, b = -1.0, 1.0  # Channel walls at y = ±1
 
     # Physical parameters
-    nu = 0.01  # Viscosity
+    nu = 10.01  # Viscosity
     dPdx = -1.0  # Pressure gradient driving the flow
 
     # Create DNS flags
@@ -63,14 +63,20 @@ function simple_channel_flow_example()
     rhsfields = [rhs]
     s = 1  # Time step index
 
+    max_u = maximum(abs.(u.physical_data))
+    max_p = maximum(abs.(p.physical_data))
+    println("Max velocity magnitude: $(max_u)")
+    println("Max pressure magnitude: $(max_p)")
     println("Calling solve!...")
     try
         solve!(nse, outfields, rhsfields, s, flags)
         println("✓ Solver completed successfully")
+        make_physical!(u)
+        make_physical!(p)
 
         # Check that solution was modified
-        max_u = maximum(abs.(u.data))
-        max_p = maximum(abs.(p.data))
+        max_u = maximum(abs.(u.physical_data))
+        max_p = maximum(abs.(p.physical_data))
         println("Max velocity magnitude: $(max_u)")
         println("Max pressure magnitude: $(max_p)")
 
@@ -79,7 +85,8 @@ function simple_channel_flow_example()
         rethrow(e)
     end
 
-    return nse, outfields, rhsfields
+    return
+    # return nse, outfields, rhsfields
 end
 
 simple_channel_flow_example()

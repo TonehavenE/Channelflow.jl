@@ -12,7 +12,7 @@ mutable struct MultistepDNS <: DNSAlgorithm
     countdown::Int
 end
 
-function MultistepDNS(fields::Vector{FlowField}, equations::Equation, flags::DNSFlags)
+function MultistepDNS(fields::Vector{FlowField{T}}, equations::Equation, flags::DNSFlags) where {T}
     algorithm = flags.timestepping
     if algorithm == SBDF1
         order = 1
@@ -50,8 +50,8 @@ function MultistepDNS(fields::Vector{FlowField}, equations::Equation, flags::DNS
     fields_history = []
     nonlf_history = []
     for j = 1:order
-        push!(fields_history, temp_array[j])
-        push!(nonlf_history, temp_array[j])
+        push!(fields_history, temp_array)
+        push!(nonlf_history, temp_array)
     end
 
     num_initsteps = order - 1
@@ -71,7 +71,7 @@ function MultistepDNS(fields::Vector{FlowField}, equations::Equation, flags::DNS
         eta,
         alpha,
         beta,
-        flowfields_history,
+        fields_history,
         nonlf_history,
         countdown,
     )

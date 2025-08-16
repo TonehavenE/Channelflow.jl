@@ -62,6 +62,17 @@ function Base.:+(ff1::FlowField{T}, ff2::FlowField{T}) where {T}
     return result
 end
 
+function Base.:+(ff1::FlowField{T}, u::ChebyCoeff{S}) where {T,S}
+    @assert xz_state(ff1) == Spectral
+    @assert y_state(ff1) == u.state
+    @assert ff1.domain.Ny == num_modes(u)
+
+    for ny in 1:ff1.domain.Ny
+        set_cmplx!(ff1, cmplx(ff1, 1, ny, 1, 1) + u[ny], 1, ny, 1, 1)
+    end
+    return ff1
+end
+
 """
     ff1 - ff2
 

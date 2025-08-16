@@ -1,10 +1,86 @@
 using ..TauSolvers
 using ..ChebyCoeffs
+using ..FlowFields
+using ..BasisFuncs
 import Base.@kwdef
 
 import ..TauSolvers: solve!
 
 export NSE
+
+function profile(ff::FlowField, mx::Int, mz::Int, i::Int)
+    ret = ChebyCoeff{ComplexF64}(ff.domain.Ny, ff.domain.a, ff.domain.b, y_state(ff))
+    if xz_state(ff) == Spectral
+        for ny = 1:ff.domain.Ny
+            ret[ny] = cmplx(ff, mx, ny, mz, i)
+        end
+    else
+        for ny = 1:ff.domain.Ny
+            ret[ny] = ff[mx, ny, mz, i]
+        end
+    end
+
+    return ret
+end
+
+function profile(ff::FlowField, mx::Int, mz::Int)
+    ret = BasisFunc(num_dimensions(ff), ff.domain.Ny, mx_to_kx(ff, mx), mz_to_kz(ff, mz), ff.domain.Lx, ff.domain.Lz, ff.domain.a, ff.domain.b, y_state(ff))
+    for i = 1:num_dimensions(ff), ny = 1:ff.domain.Ny
+        ret[i, ny] = cmplx(ff, mx, ny, mz, i)
+    end
+    return ret
+end
+
+function get_Ubulk(ff::FlowField)
+    ubulk = mean_value(profile(ff, 1, 1, 1))
+    if abs(ubulk) < 1e-15
+        ubulk = 0.0
+    end
+    return ubulk
+end
+
+function get_Wbulk(ff::FlowField)
+    wbulk = mean_value(profile(ff, 1, 1, 3))
+    if abs(wbulk) < 1e-15
+        wbulk = 0.0
+    end
+    return wbulk
+end
+
+function dudy_a(ff::FlowField)
+    @assert y_state(ff) == Spectral
+    prof = profile(ff, 1, 1)
+    dudy = derivative(realview(get_u(prof)))
+    return eval_a(dudy)
+end
+
+function dudy_b(ff::FlowField)
+    @assert y_state(ff) == Spectral
+    prof = profile(ff, 1, 1)
+    dudy = derivative(realview(get_u(prof)))
+    return eval_b(dudy)
+end
+
+function dwdy_a(ff::FlowField)
+    @assert y_state(ff) == Spectral
+    prof = profile(ff, 1, 1)
+    dwdy = derivative(realview(get_w(prof)))
+    return eval_a(dwdy)
+end
+function dwdy_b(ff::FlowField)
+    @assert y_state(ff) == Spectral
+    prof = profile(ff, 1, 1)
+    dwdy = derivative(realview(get_w(prof)))
+    return eval_b(dwdy)
+end
+
+function get_dPdx(ff::FlowField, nu::Real)
+    nu * (dudy_b(ff) - dudy_a(ff)) / Ly(ff)
+end
+
+function get_dPdz(ff::FlowField, nu::Real)
+    nu * (dwdy_b(ff) - dwdy_a(ff)) / Ly(ff)
+end
 
 @kwdef mutable struct SpatialParameters
     # Grid dimensions
@@ -60,20 +136,21 @@ end
 
 function TransientFields(temp::FlowField, Nyd::Int, a::Real, b::Real)
     return TransientFields(
-        temp,
-        ChebyCoeff{ComplexF64}(Nyd, a, b, Spectral),
-        ChebyCoeff{ComplexF64}(Nyd, a, b, Spectral),
-        ChebyCoeff{ComplexF64}(Nyd, a, b, Spectral),
-        ChebyCoeff{ComplexF64}(Nyd, a, b, Spectral),
-        ChebyCoeff{ComplexF64}(Nyd, a, b, Spectral),
-        ChebyCoeff{ComplexF64}(Nyd, a, b, Spectral),
-        ChebyCoeff{ComplexF64}(Nyd, a, b, Spectral)
+        ff=temp,
+        uk=ChebyCoeff{ComplexF64}(Nyd, a, b, Spectral),
+        vk=ChebyCoeff{ComplexF64}(Nyd, a, b, Spectral),
+        wk=ChebyCoeff{ComplexF64}(Nyd, a, b, Spectral),
+        Pk=ChebyCoeff{ComplexF64}(Nyd, a, b, Spectral),
+        Pyk=ChebyCoeff{ComplexF64}(Nyd, a, b, Spectral),
+        Ruk=ChebyCoeff{ComplexF64}(Nyd, a, b, Spectral),
+        Rvk=ChebyCoeff{ComplexF64}(Nyd, a, b, Spectral),
+        Rwk=ChebyCoeff{ComplexF64}(Nyd, a, b, Spectral)
     )
 end
 
 @kwdef mutable struct NSE <: Equation
     lambda_t::Vector{Real}
-    tausolvers::Vector{Vector{Vector{TauSolver}}}
+    tausolvers::Union{Vector{Vector{Vector{TauSolver}}},Vector{Vector{Vector{UndefInitializer}}},Int}
 
     # Refactored components
     spatial::SpatialParameters
@@ -245,10 +322,10 @@ function NSE(fields::Vector{FlowField{T}}, flags::DNSFlags) where T<:Number
         tmp = FlowField(u.domain.Nx, u.domain.Ny, u.domain.Nz, 3, u.domain.Lx, u.domain.Lz, u.domain.a, u.domain.b)
     end
 
-    transients = TransientFields(tmp, Nyd, a, b)
+    transients = TransientFields(tmp, Nyd, u.domain.a, u.domain.b)
 
     return NSE(
-        lambda_t=[],
+        lambda_t=[0.0],
         tausolvers=0,
         spatial=spatial,
         baseflow=baseflow,
@@ -256,20 +333,20 @@ function NSE(fields::Vector{FlowField{T}}, flags::DNSFlags) where T<:Number
     )
 end
 
-function reset_lambda!(eqn::NSE, lambda_t::Vector{Real}, flags::DNSFlags)
+function reset_lambda!(eqn::NSE, lambda_t::Vector{T}, flags::DNSFlags) where {T<:Real}
     eqn.lambda_t = lambda_t
 
     if eqn.tausolvers == 0
-        eqn.tausolvers = Array{TauSolver,3}(undef, (size(lambda_t), eqn.spatial.Mx, eqn.spatial.Mz))
+        eqn.tausolvers = [[[TauSolver() for _ in 1:eqn.spatial.Mz] for _ in 1:eqn.spatial.Mx] for _ in 1:length(lambda_t)]
     end
 
     c = 4.0 * pi^2 * flags.nu
-    for j = 1:size(lambda_t), mx = 1:eqn.spatial.Mx, mz = 1:eqn.spatial.Mz
+    for j = 1:length(lambda_t), mx = 1:eqn.spatial.Mx, mz = 1:eqn.spatial.Mz
         kx = mx_to_kx(eqn.tmp.ff, mx)
         kz = mz_to_kz(eqn.tmp.ff, mz)
         lambda = lambda_t[j] + c * ((kx / eqn.spatial.Lx)^2 + (kz / eqn.spatial.Lz)^2)
         if (kx != kx_max(eqn.tmp.ff) || kz != kz_max(eqn.tmp.ff)) && (!dealias_xz(flags) || !is_aliased(eqn.tmp.ff, kx, kz))
-            eqn.tausolvers[j, mx, mz] = TauSolver(kx, kz, eqn.spatial.Lx, eqn.spatial.Lz, eqn.spatial.a, eqn.spatial.b, lambda, flags.nu, eqn.spatial.Nyd, flags.tau_correction)
+            eqn.tausolvers[j][mx][mz] = TauSolver(kx, kz, eqn.spatial.Lx, eqn.spatial.Lz, eqn.spatial.a, eqn.spatial.b, lambda, flags.nu, eqn.spatial.Nyd, flags.taucorrection)
         end
     end
 end
@@ -450,7 +527,7 @@ function linear!(eqn::NSE, infields::Vector{FlowField}, outfields::Vector{FlowFi
     end
 end
 
-function solve!(eqn::NSE, outfields::Vector{FlowField}, rhs::Vector{FlowField}, s::Int, flags::DNSFlags)
+function solve!(eqn::NSE, outfields::Vector{FlowField{T}}, rhs::Vector{FlowField{T}}, s::Int, flags::DNSFlags) where {T<:Number}
     # Method takes a right hand side {u} and solves for output fields {u,press}
     @assert length(outfields) == length(rhs) + 1 "Make sure user provides correct RHS which can be created outside NSE with create_RHS()"
 
@@ -466,7 +543,7 @@ function solve!(eqn::NSE, outfields::Vector{FlowField}, rhs::Vector{FlowField}, 
             kz = mz_to_kz(outfields[1], mz)
 
             # Skip last and aliased modes
-            if (kx == kxmax || kz == kzmax) || (dealias_xz(flags) && is_aliased_mode(kx, kz))
+            if (kx == kxmax || kz == kzmax) || (dealias_xz(flags) && is_aliased(outfields[1], kx, kz))
                 continue
             end
 
@@ -485,12 +562,12 @@ function solve!(eqn::NSE, outfields::Vector{FlowField}, rhs::Vector{FlowField}, 
                 # LHS includes also the constant terms C which can be added to RHS
                 if length(eqn.baseflow.Ubase_yy.data) > 0
                     for ny = 1:eqn.spatial.Ny
-                        eqn.tmp.Ruk.re[ny] += flags.nu * eqn.baseflow.Ubase_yy[ny]  # Rx has addl'l term from Ubase
+                        eqn.tmp.Ruk[ny] += flags.nu * eqn.baseflow.Ubase_yy[ny]  # Rx has addl'l term from Ubase
                     end
                 end
                 if length(eqn.baseflow.Wbase_yy.data) > 0
                     for ny = 1:eqn.spatial.Ny
-                        eqn.tmp.Rwk.re[ny] += flags.nu * eqn.baseflow.Wbase_yy[ny]  # Rz has addl'l term from Wbase
+                        eqn.tmp.Rwk[ny] += flags.nu * eqn.baseflow.Wbase_yy[ny]  # Rz has addl'l term from Wbase
                     end
                 end
 
@@ -531,18 +608,18 @@ function solve!(eqn::NSE, outfields::Vector{FlowField}, rhs::Vector{FlowField}, 
                 (outfields[1].domain.Nx % 2 == 0 && outfields[1].domain.Nz % 2 == 0 && kx == kxmax && kz == kzmax))
 
                 for ny = 1:eqn.spatial.Nyd
-                    outfields[1][mx, ny, mz, 1] = Complex(real(eqn.tmp.uk[ny]), 0.0)
-                    outfields[1][mx, ny, mz, 2] = Complex(real(eqn.tmp.vk[ny]), 0.0)
-                    outfields[1][mx, ny, mz, 3] = Complex(real(eqn.tmp.wk[ny]), 0.0)
-                    outfields[2][mx, ny, mz, 1] = Complex(real(eqn.tmp.Pk[ny]), 0.0)
+                    set_cmplx!(outfields[1], eqn.tmp.uk[ny], mx, ny, mz, 1)
+                    set_cmplx!(outfields[1], eqn.tmp.vk[ny], mx, ny, mz, 2)
+                    set_cmplx!(outfields[1], eqn.tmp.wk[ny], mx, ny, mz, 3)
+                    set_cmplx!(outfields[2], eqn.tmp.Pk[ny], mx, ny, mz, 1)
                 end
             else
                 # The normal case, for general kx,kz
                 for ny = 1:eqn.spatial.Nyd
-                    outfields[1][mx, ny, mz, 1] = eqn.tmp.uk[ny]
-                    outfields[1][mx, ny, mz, 2] = eqn.tmp.vk[ny]
-                    outfields[1][mx, ny, mz, 3] = eqn.tmp.wk[ny]
-                    outfields[2][mx, ny, mz, 1] = eqn.tmp.Pk[ny]
+                    set_cmplx!(outfields[1], eqn.tmp.uk[ny], mx, ny, mz, 1)
+                    set_cmplx!(outfields[1], eqn.tmp.vk[ny], mx, ny, mz, 2)
+                    set_cmplx!(outfields[1], eqn.tmp.wk[ny], mx, ny, mz, 3)
+                    set_cmplx!(outfields[2], eqn.tmp.Pk[ny], mx, ny, mz, 1)
                 end
             end
         end

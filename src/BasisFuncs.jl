@@ -29,9 +29,9 @@ struct BasisFuncDomain
     b::Real
     function BasisFuncDomain(num_dimensions::Int, Ny::Int, kx::Int, kz::Int, Lx::Real, Lz::Real, a::Real, b::Real)
         @assert num_dimensions > 0 "The number of dimensions must be positive"
-        @assert kx > 0 "There must be at least 1 x mode"
+        # @assert kx > 0 "There must be at least 1 x mode"
         @assert Ny > 0 "There must be at least 1 y gridpoint"
-        @assert kz > 0 "There must be at least 1 z mode"
+        # @assert kz > 0 "There must be at least 1 z mode"
 
         new(num_dimensions, Ny, kx, kz, Lx, Lz, a, b)
     end
@@ -98,6 +98,11 @@ function BasisFunc(u::ChebyCoeff{T}, v::ChebyCoeff{T}, w::ChebyCoeff{T}, kx::Rea
     BasisFunc(domain, state, funcs)
 end
 
+function BasisFunc(Nd::Int, Ny::Int, kx::Int, kz::Int, Lx::Real, Lz::Real, a::Real, b::Real, s::FieldState)
+    domain = BasisFuncDomain(Nd, Ny, kx, kz, Lx, Lz, a, b)
+    functions = [ChebyCoeff{ComplexF64}(Ny, a, b, s) for _ in 1:Nd]
+    return BasisFunc(domain, s, functions)
+end
 # ======================
 # Geometry Comparsions
 # ======================
@@ -128,6 +133,12 @@ function Base.getindex(f::BasisFunc, i::Int)
     return f.functions[i]
 end
 
+function Base.getindex(f::BasisFunc, i::Int, ny::Int)
+    @assert i >= 1 "The index to BasisFunc must be 1 or greater"
+    @assert i <= f.domain.num_dimensions "The index to BasisFunc must be less than or equal to the number of dimensions."
+    @assert ny <= f.domain.Ny "The y index must be less than or equal to the number of y gridpoints."
+    return f.functions[i][ny]
+end
 function Base.:(==)(f::BasisFunc, g::BasisFunc)
     if !congruent(f, g)
         return false
@@ -188,6 +199,13 @@ function set_state!(f::BasisFunc, state::FieldState)
         set_state!(f.functions[i], state)
     end
     f.state = state
+end
+
+function Base.setindex!(f::BasisFunc, val, i::Int, ny::Int)
+    @assert i >= 1 "The index to BasisFunc must be 1 or greater"
+    @assert i <= f.domain.num_dimensions "The index to BasisFunc must be less than or equal to the number of dimensions."
+    @assert ny <= f.domain.Ny "The y index must be less than or equal to the number of y gridpoints."
+    f.functions[i][ny] = val
 end
 
 """

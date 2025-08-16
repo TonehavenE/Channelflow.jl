@@ -1,3 +1,5 @@
+export curl!, cross!
+
 function curl!(f::FlowField, curlf::FlowField)
     @assert num_dimensions(f) == 3 "FlowField must have 3 dimensions for curl operation"
     sxz = xz_state(f)

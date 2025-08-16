@@ -155,10 +155,32 @@ mutable struct TauSolver
         influence_correction!(this, this.P_0, this.v_0)
         dv_dyy = derivative2(this.v_0)
 
-        this.sigma0_N  = lambda * this.v_0[N]   + dP0_dy[N]   - nu * dv_dyy[N]
+        this.sigma0_N = lambda * this.v_0[N] + dP0_dy[N] - nu * dv_dyy[N]
         this.sigma0_N1 = lambda * this.v_0[N-1] + dP0_dy[N-1] - nu * dv_dyy[N-1]
         this
     end
+end
+
+"""
+    TauSolver()
+
+Empty constructor for TauSolver.
+"""
+function TauSolver()
+    a = -1.0
+    b = 1.0
+    TauSolver(
+        0,
+        0,
+        2pi,
+        2pi,
+        a,
+        b,
+        1.0,
+        1.0,
+        5,
+        false
+    )
 end
 
 function influence_correction!(tau::TauSolver, P::ChebyCoeff, v::ChebyCoeff)
@@ -197,7 +219,7 @@ function solve_P_and_v!(
 
     # Solve velocity Helmholtz: nu*v'' - lambda*v = tmp, with Dirichlet BCs
     solve!(tau.velocity_helmholtz, v, tmp, 0.0, 0.0)
-    
+
     influence_correction!(tau, P, v)
 
     if !tau.tau_correction
@@ -212,24 +234,24 @@ function solve_P_and_v!(
     λ = tau.lambda
     ν = tau.nu
 
-    sigma1_N  = λ * v[N]   - ν * vyy[N]   - Ry[N]
+    sigma1_N = λ * v[N] - ν * vyy[N] - Ry[N]
     sigma1_N1 = λ * v[N-1] - ν * vyy[N-1] - Ry[N-1]
 
     tmp2 = derivative(P)
-    sigma1_N  += tmp2[N]
+    sigma1_N += tmp2[N]
     sigma1_N1 += tmp2[N-1]
 
     # sigma0_Nb and sigma0_Nb1 are precomputed in tau
-    sigma_N  = sigma1_N  / (1.0 - tau.sigma0_N)
+    sigma_N = sigma1_N / (1.0 - tau.sigma0_N)
     sigma_N1 = sigma1_N1 / (1.0 - tau.sigma0_N1)
 
     # Apply tau correction to P and v
     for i = 1:tau.num_modes
-        if iseven(i-1)
+        if iseven(i - 1)
             P[i] += sigma_N1 * tau.P_0[i]
-            v[i] += sigma_N  * tau.v_0[i]
+            v[i] += sigma_N * tau.v_0[i]
         else
-            P[i] += sigma_N  * tau.P_0[i]
+            P[i] += sigma_N * tau.P_0[i]
             v[i] += sigma_N1 * tau.v_0[i]
         end
     end
@@ -248,14 +270,14 @@ function solve!(tau::TauSolver, u::ChebyCoeff, v::ChebyCoeff, w::ChebyCoeff, P::
     # Decouple: solve real
     rr = derivative(realview(Ry))
     for n = 1:N
-        rr[n] -= tau.two_pi_kxLx*imag(Rx[n]) + tau.two_pi_kzLz*imag(Rz[n])
+        rr[n] -= tau.two_pi_kxLx * imag(Rx[n]) + tau.two_pi_kzLz * imag(Rz[n])
     end
     solve_P_and_v!(tau, realview(P), realview(v), rr, realview(Ry))
 
     # Solve imaginary
     rr = derivative(imagview(Ry))
     for n = 1:N
-        rr[n] += tau.two_pi_kxLx*real(Rx[n]) + tau.two_pi_kzLz*real(Rz[n])
+        rr[n] += tau.two_pi_kxLx * real(Rx[n]) + tau.two_pi_kzLz * real(Rz[n])
     end
     solve_P_and_v!(tau, imagview(P), imagview(v), rr, imagview(Ry))
 
@@ -291,14 +313,14 @@ function solve!(tau::TauSolver, u::ChebyCoeff, v::ChebyCoeff, w::ChebyCoeff, P::
     # Decouple: solve real
     rr = derivative(realview(Ry))
     for n = 1:N
-        rr[n] -= tau.two_pi_kxLx*imag(Rx[n]) + tau.two_pi_kzLz*imag(Rz[n])
+        rr[n] -= tau.two_pi_kxLx * imag(Rx[n]) + tau.two_pi_kzLz * imag(Rz[n])
     end
     solve_P_and_v!(tau, realview(P), realview(v), rr, realview(Ry))
 
     # Solve imaginary
     rr = derivative(imagview(Ry))
     for n = 1:N
-        rr[n] += tau.two_pi_kxLx*real(Rx[n]) + tau.two_pi_kzLz*real(Rz[n])
+        rr[n] += tau.two_pi_kxLx * real(Rx[n]) + tau.two_pi_kzLz * real(Rz[n])
     end
     solve_P_and_v!(tau, imagview(P), imagview(v), rr, imagview(Ry))
 
@@ -320,12 +342,12 @@ function solve!(tau::TauSolver, u::ChebyCoeff, v::ChebyCoeff, w::ChebyCoeff, P::
     return
 end
 
-function tauNorm(u::ChebyCoeff{T}) where {T <: Number}
+function tauNorm(u::ChebyCoeff{T}) where {T<:Number}
     tmp = ChebyCoeff{T}(num_modes(u) - 2, u)
     return L2Norm(u)
 end
 
-function tauDist(u::ChebyCoeff{T}, v::ChebyCoeff{T}) where {T <: Number}
+function tauDist(u::ChebyCoeff{T}, v::ChebyCoeff{T}) where {T<:Number}
     utmp = ChebyCoeff{T}(num_modes(u) - 2, u)
     vtmp = ChebyCoeff{T}(num_modes(v) - 2, v)
     return L2Dist(utmp, vtmp)
@@ -337,11 +359,11 @@ end
 Verify that the computed solution satisfies the Tau equations.
 Returns the total verification error.
 """
-function verify(tau::TauSolver, u::ChebyCoeff{ComplexF64}, v::ChebyCoeff{ComplexF64}, 
-                w::ChebyCoeff{ComplexF64}, P::ChebyCoeff{ComplexF64}, 
-                Rx::ChebyCoeff{ComplexF64}, Ry::ChebyCoeff{ComplexF64}, 
-                Rz::ChebyCoeff{ComplexF64}, verbose::Bool=false)
-    
+function verify(tau::TauSolver, u::ChebyCoeff{ComplexF64}, v::ChebyCoeff{ComplexF64},
+    w::ChebyCoeff{ComplexF64}, P::ChebyCoeff{ComplexF64},
+    Rx::ChebyCoeff{ComplexF64}, Ry::ChebyCoeff{ComplexF64},
+    Rz::ChebyCoeff{ComplexF64}, verbose::Bool=false)
+
     umean = real(mean_value(u))
     dPdx = 0.0
     return verify(tau, u, v, w, P, dPdx, Rx, Ry, Rz, umean, verbose)
@@ -353,150 +375,150 @@ end
 Verify that the computed solution satisfies the Tau equations with mean flow.
 Returns the total verification error.
 """
-function verify(tau::TauSolver, u::ChebyCoeff{ComplexF64}, v::ChebyCoeff{ComplexF64}, 
-                w::ChebyCoeff{ComplexF64}, P::ChebyCoeff{ComplexF64}, dPdx::Real,
-                Rx::ChebyCoeff{ComplexF64}, Ry::ChebyCoeff{ComplexF64}, 
-                Rz::ChebyCoeff{ComplexF64}, umean::Real, verbose::Bool=false)
-    
+function verify(tau::TauSolver, u::ChebyCoeff{ComplexF64}, v::ChebyCoeff{ComplexF64},
+    w::ChebyCoeff{ComplexF64}, P::ChebyCoeff{ComplexF64}, dPdx::Real,
+    Rx::ChebyCoeff{ComplexF64}, Ry::ChebyCoeff{ComplexF64},
+    Rz::ChebyCoeff{ComplexF64}, umean::Real, verbose::Bool=false)
+
     # Verify nu u''(y) - lambda u(y) - grad P = -R
     #        div u = 0
     #        u(±1) = 0
-    
+
     if verbose
         println("TauSolver.verify(u,v,w,P,dPdx,Rx,Ry,Rz,umean,verbose)")
         println(" kx kz == ", tau.kx, " ", tau.kz)
     end
-    
+
     N = tau.num_modes
     lhs = ChebyCoeff{ComplexF64}(N, tau.a, tau.b, Spectral)
     tmp = ChebyCoeff{ComplexF64}(N, tau.a, tau.b, Spectral)
     error = 0.0
     terr = 0.0
     lerr = 0.0
-    
+
     # Verify u equation: -nu u'' + lambda u + dP/dx == Rx
     lhs = ChebyCoeff(u.data, u.a, u.b, u.state)
     lhs *= tau.lambda
-    
+
     u_second_deriv = derivative2(u)
     u_second_deriv *= tau.nu
     lhs -= u_second_deriv
-    
+
     tmp = ChebyCoeff(P.data, P.a, P.b, P.state)
     tmp *= complex(0.0, tau.two_pi_kxLx)
     lhs += tmp
-    
+
     # Add mean pressure gradient
     lhs[1] += dPdx
-    
+
     terr = tauDist(lhs, Rx)
     lerr = L2Dist(lhs, Rx)
     error += lerr
-    
+
     if verbose
         println("L2Norm(Rx) == ", L2Norm(Rx))
         println("tauDist(nu u'' - lambda u - dP/dx, -Rx) == ", terr)
         println(" L2Dist(nu u'' - lambda u - dP/dx, -Rx) == ", lerr)
     end
-    
+
     # Verify v equation: nu v'' - lambda v - dP/dy == -Ry
     lhs = ChebyCoeff(v.data, v.a, v.b, v.state)
     lhs *= tau.lambda
-    
+
     v_second_deriv = derivative2(v)
     v_second_deriv *= tau.nu
     lhs -= v_second_deriv
-    
+
     P_grad_y = derivative(P)
     lhs += P_grad_y
-    
+
     terr = tauDist(lhs, Ry)
     lerr = L2Dist(lhs, Ry)
     error += lerr
-    
+
     if verbose
         println("L2Norm(Ry) == ", L2Norm(Ry))
         println("tauDist(nu v'' - lambda v - dP/dy, -Ry) == ", terr)
         println(" L2Dist(nu v'' - lambda v - dP/dy, -Ry) == ", lerr)
     end
-    
+
     # Verify w equation: nu w'' - lambda w - dP/dz == -Rz
     lhs = ChebyCoeff(w.data, w.a, w.b, w.state)
     lhs *= tau.lambda
-    
+
     w_second_deriv = derivative2(w)
     w_second_deriv *= tau.nu
     lhs -= w_second_deriv
-    
+
     tmp = ChebyCoeff(P.data, P.a, P.b, P.state)
     tmp *= complex(0.0, tau.two_pi_kzLz)
     lhs += tmp
-    
+
     terr = tauDist(lhs, Rz)
     lerr = L2Dist(lhs, Rz)
     error += lerr
-    
+
     if verbose
         println("L2Norm(Rz) == ", L2Norm(Rz))
         println("tauDist(nu w'' - lambda w - dP/dz, -Rz) == ", terr)
         println(" L2Dist(nu w'' - lambda w - dP/dz, -Rz) == ", lerr)
     end
-    
+
     # Verify pressure equation: P'' - kappa^2 P = div R
     P_second_deriv = derivative2(P)
     lhs = ChebyCoeff(P_second_deriv.data, P_second_deriv.a, P_second_deriv.b, P_second_deriv.state)
-    
+
     tmp = ChebyCoeff(P.data, P.a, P.b, P.state)
     tmp *= -tau.kappa2
     lhs += tmp
-    
+
     # Compute div R
     r = ChebyCoeff{ComplexF64}(N, tau.a, tau.b, Spectral)
-    
+
     # Re and Im parts decouple
     Ry_grad = derivative(realview(Ry))
     r_re = ChebyCoeff(Ry_grad.data, Ry_grad.a, Ry_grad.b, Ry_grad.state)
     for n = 1:N
         r_re[n] -= tau.two_pi_kxLx * imag(Rx[n]) + tau.two_pi_kzLz * imag(Rz[n])
     end
-    
+
     Ry_grad_im = derivative(imagview(Ry))
     r_im = ChebyCoeff(Ry_grad_im.data, Ry_grad_im.a, Ry_grad_im.b, Ry_grad_im.state)
     for n = 1:N
         r_im[n] += tau.two_pi_kxLx * real(Rx[n]) + tau.two_pi_kzLz * real(Rz[n])
     end
-    
+
     # Combine real and imaginary parts
     for n = 1:N
         r[n] = complex(r_re[n], r_im[n])
     end
-    
+
     terr = tauDist(lhs, r)
     lerr = L2Dist(lhs, r)
     error += lerr
-    
+
     if verbose
         println("L2Norm(div R) == ", L2Norm(r))
         println("tauDist(P'' - k^2 P, div R) == ", terr)
         println(" L2Dist(P'' - k^2 P, div R) == ", lerr)
     end
-    
+
     # Verify divergence: div u = i*kx*u + dv/dy + i*kz*w = 0
     v_grad_y = derivative(v)
     tmp = ChebyCoeff(v_grad_y.data, v_grad_y.a, v_grad_y.b, v_grad_y.state)
     for n = 1:N
         tmp[n] += im * (tau.two_pi_kxLx * u[n] + tau.two_pi_kzLz * w[n])
     end
-    
+
     terr = tauNorm(tmp)
     lerr = L2Norm(tmp)
     error += lerr
-    
+
     if verbose
         println("tauNorm(div) == ", terr)
         println(" L2Norm(div) == ", lerr)
     end
-    
+
     # Boundary conditions
     ua = eval_a(u)
     ub = eval_b(u)
@@ -504,14 +526,14 @@ function verify(tau::TauSolver, u::ChebyCoeff{ComplexF64}, v::ChebyCoeff{Complex
     if verbose
         println("u(a),u(b) == ", ua, " ", ub)
     end
-    
+
     va = eval_a(v)
     vb = eval_b(v)
     error += abs(va) + abs(vb)
     if verbose
         println("v(a),v(b) == ", va, " ", vb)
     end
-    
+
     vy = derivative(v)
     vya = eval_a(vy)
     vyb = eval_b(vy)
@@ -519,14 +541,14 @@ function verify(tau::TauSolver, u::ChebyCoeff{ComplexF64}, v::ChebyCoeff{Complex
     if verbose
         println("v' at a,b == ", vya, " ", vyb)
     end
-    
+
     wa = eval_a(w)
     wb = eval_b(w)
     error += abs(wa) + abs(wb)
     if verbose
         println("w(a),w(b) == ", wa, " ", wb)
     end
-    
+
     mean_error = abs2(real(mean_value(u)) - umean)
     error += mean_error
     if verbose
@@ -534,12 +556,12 @@ function verify(tau::TauSolver, u::ChebyCoeff{ComplexF64}, v::ChebyCoeff{Complex
     else
         @assert mean_error < 1e-12 "Mean flow error too large: $mean_error"
     end
-    
+
     if verbose
         println("total verification error == ", error)
         println("} TauSolver.verify(...)")
     end
-    
+
     return error
 end
 
