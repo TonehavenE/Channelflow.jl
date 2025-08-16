@@ -1,5 +1,7 @@
 module DNSSettings
 
+using ..FlowFields
+
 export VelocityScale,
     WallScale,
     ParabolicScale,
@@ -9,6 +11,7 @@ export VelocityScale,
     LaminarBase,
     SuctionBase,
     ArbitraryBase,
+    MeanConstraint,
     PressureGradient,
     BulkVelocity,
     TimeStepMethod,
@@ -48,9 +51,9 @@ export VelocityScale,
     dealias_y
 
 @enum VelocityScale WallScale ParabolicScale
-@BaseFlow ZeroBase LinearBase ParabolicBase LaminarBase SuctionBase ArbitraryBase
-@MeanConstraint PressureGradient BulkVelocity
-@TimeStepMethod CNFE1 CNAB2 CNRK2 SMRK2 SBDF1 SBDF2 SBDF3 SBDF4
+@enum BaseFlow ZeroBase LinearBase ParabolicBase LaminarBase SuctionBase ArbitraryBase
+@enum MeanConstraint PressureGradient BulkVelocity
+@enum TimeStepMethod CNFE1 CNAB2 CNRK2 SMRK2 SBDF1 SBDF2 SBDF3 SBDF4
 @enum NonlinearMethod Rotational Convection Divergence SkewSymmetric Alternating Alternating_ LinearAboutProfile
 @enum Dealiasing NoDealiasing DealiasXZ DealiasY DealiasXYZ
 @enum Verbosity Silent PrintTime PrintTicks VerifyTauSolve PrintAll
@@ -154,15 +157,15 @@ function DNSFlags(;
     CFLmin=0.4,
     CFLmax=0.6,
     symmetryprojectioninterval=100.0,
-    baseflow=:LaminarBase,
-    constraint=:PressureGradient,
-    timestepping=:SBDF3,
-    initstepping=:SMRK2,
-    nonlinearity=:Rotational,
-    dealiasing=:DealiasXZ,
+    baseflow=LaminarBase,
+    constraint=PressureGradient,
+    timestepping=SBDF3,
+    initstepping=SMRK2,
+    nonlinearity=Rotational,
+    dealiasing=DealiasXZ,
     bodyforce=nothing,
     taucorrection=true,
-    verbosity=:PrintTicks,
+    verbosity=PrintTicks,
     logstream=stdout,
 )
     return DNSFlags(
@@ -310,7 +313,7 @@ function adjust_to_middle!(ts::TimeStep, CFL::Real)
     return adjustment
 end
 
-function adjust_to_desired!(ts:TimeStep, a::Real, a_desired::Real)
+function adjust_to_desired!(ts::TimeStep, a::Real, a_desired::Real)
     ai = a
     if (ts.dt_min == ts.dt_max) || ts.dT == 0.0
         return false

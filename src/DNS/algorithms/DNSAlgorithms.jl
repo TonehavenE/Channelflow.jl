@@ -1,7 +1,10 @@
 module DNSAlgorithms
 
 using ..DNSSettings
+using ..Equations
 using ..FlowFields
+
+export DNSAlgorithm, DNSAlgorithmCommon, advance!, project, reset_dt, push!, is_full, reset_time!
 
 """
     DNSAlgorithm
@@ -20,7 +23,7 @@ abstract type DNSAlgorithm end
 
 Advances the simulation by a given number of time steps.
 """
-function advance!(algorithm::DNSAlgorithm, fields::Vector{FlowField}, num_steps::Int = 1)
+function advance!(algorithm::DNSAlgorithm, fields::Vector{FlowField}, num_steps::Int=1)
     error("The function `advance!` is not implemented for $(typeof(algorithm))!")
 end
 
@@ -74,7 +77,7 @@ mutable struct DNSAlgorithmCommon
     symmetries::Vector{Vector{Any}} # TODO implement symmetries
 end
 
-function DNSAlgorithmCommon(fields::Vector{FlowField}, equations, flags::DNSFlags)
+function DNSAlgorithmCommon(fields::Vector{FlowField}, equation::Equation, flags::DNSFlags)
     return DNSAlgorithmCommon(
         flags,
         0,
@@ -86,5 +89,7 @@ function DNSAlgorithmCommon(fields::Vector{FlowField}, equations, flags::DNSFlag
         [], # placeholder
     )
 end
+
+include("MultistepDNS.jl")
 
 end

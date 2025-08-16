@@ -9,6 +9,9 @@ include("FlowField.jl")
 include("Metrics.jl")
 include("BasisFuncs.jl")
 include("TauSolvers.jl")
+include("DNS/DNSSettings.jl")
+include("Equations/Equations.jl")
+include("DNS/algorithms/DNSAlgorithms.jl")
 
 @reexport using .ChebyCoeffs
 @reexport using .BandedTridiags
@@ -17,5 +20,8 @@ include("TauSolvers.jl")
 @reexport using .Metrics
 @reexport using .BasisFuncs
 @reexport using .TauSolvers
+@reexport using .DNSSettings
+@reexport using .Equations
+@reexport using .DNSAlgorithms
 
 end

@@ -1,3 +1,5 @@
+export MultistepDNS
+
 mutable struct MultistepDNS <: DNSAlgorithm
     common::DNSAlgorithmCommon  # Composition: HAS the common data
 
@@ -10,7 +12,7 @@ mutable struct MultistepDNS <: DNSAlgorithm
     countdown::Int
 end
 
-function MultistepDNS(fields::Vector{FlowField}, equations, flags::DNSFlags)
+function MultistepDNS(fields::Vector{FlowField}, equations::Equation, flags::DNSFlags)
     algorithm = flags.timestepping
     if algorithm == SBDF1
         order = 1
@@ -37,6 +39,7 @@ function MultistepDNS(fields::Vector{FlowField}, equations, flags::DNSFlags)
     end
 
     lambda_t = [eta / flags.dt]
+    reset_lambda!(equations, lambda_t, flags)
 
     temp_array = []
     for i = 1:length(fields)
@@ -110,7 +113,7 @@ function advance!(alg::MultistepDNS, fields::Vector{FlowField}, num_steps::Int)
         end
 
         # solve the implicit problem 
-        solve!(alg.equations, alg.fields[J], rhs)
+        solve!(alg.equations, alg.fields[J], rhs, num_steps, flags)
         # now we need to shift all of the fields over...
 
         for j = J:-1:1
