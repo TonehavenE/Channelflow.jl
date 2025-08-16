@@ -1,7 +1,10 @@
 using ..TauSolvers
-using ..DNSSettings
-using ..ChebyCoeff
+using ..ChebyCoeffs
 import Base.@kwdef
+
+import ..TauSolvers: solve!
+
+export NSE
 
 @kwdef mutable struct SpatialParameters
     # Grid dimensions
@@ -152,10 +155,10 @@ end
 
 Initializes channel flow constraints based on Ubase, Wbase, the velocity field u, and DNSFlags.
 """
-function init_cf_constraint(Ubase::ChebyCoeff, WBase::ChebyCoeff, u::FlowField, flags::DNSFlags)
+function init_cf_constraint(Ubase::ChebyCoeff, Wbase::ChebyCoeff, u::FlowField, flags::DNSFlags)
     Ubase_y = derivative(Ubase)
     Ubase_yy = derivative(Ubase_y)
-    Wbase_y = derivative(WBase)
+    Wbase_y = derivative(Wbase)
     Wbase_yy = derivative(Wbase_y)
 
     Ubulk_Base = mean_value(Ubase)
@@ -209,11 +212,11 @@ function init_cf_constraint(Ubase::ChebyCoeff, WBase::ChebyCoeff, u::FlowField, 
     )
 end
 
-function NSE(fields::Vector{FlowField}, flags::DNSFlags)
+function NSE(fields::Vector{FlowField{T}}, flags::DNSFlags) where T<:Number
     u = fields[1]
     Nyd = dealias_y(flags) ? 2 * (num_y_modes(u) - 1) / 3 + 1 : num_y_modes(u)
-    kxd_max = dealias_xz(flags) ? u.domain.Nx / 3 - 1 : kx_max(u)
-    kzd_max = dealias_xz(flags) ? u.domain.Nz / 3 - 1 : kz_max(u)
+    kxd_max = dealias_xz(flags) ? div(u.domain.Nx, 3) - 1 : kx_max(u)
+    kzd_max = dealias_xz(flags) ? div(u.domain.Nz, 3) - 1 : kz_max(u)
 
     Ubase, Wbase = create_base_flow(flags, u.domain.Ny, u.domain.a, u.domain.b)
 
@@ -246,11 +249,33 @@ function NSE(fields::Vector{FlowField}, flags::DNSFlags)
 
     return NSE(
         lambda_t=[],
-        tausolvers=[[[]]],
+        tausolvers=0,
         spatial=spatial,
         baseflow=baseflow,
         tmp=transients
     )
+end
+
+function reset_lambda!(eqn::NSE, lambda_t::Vector{Real}, flags::DNSFlags)
+    eqn.lambda_t = lambda_t
+
+    if eqn.tausolvers == 0
+        eqn.tausolvers = Array{TauSolver,3}(undef, (size(lambda_t), eqn.spatial.Mx, eqn.spatial.Mz))
+    end
+
+    c = 4.0 * pi^2 * flags.nu
+    for j = 1:size(lambda_t), mx = 1:eqn.spatial.Mx, mz = 1:eqn.spatial.Mz
+        kx = mx_to_kx(eqn.tmp.ff, mx)
+        kz = mz_to_kz(eqn.tmp.ff, mz)
+        lambda = lambda_t[j] + c * ((kx / eqn.spatial.Lx)^2 + (kz / eqn.spatial.Lz)^2)
+        if (kx != kx_max(eqn.tmp.ff) || kz != kz_max(eqn.tmp.ff)) && (!dealias_xz(flags) || !is_aliased(eqn.tmp.ff, kx, kz))
+            eqn.tausolvers[j, mx, mz] = TauSolver(kx, kz, eqn.spatial.Lx, eqn.spatial.Lz, eqn.spatial.a, eqn.spatial.b, lambda, flags.nu, eqn.spatial.Nyd, flags.tau_correction)
+        end
+    end
+end
+
+function create_RHS(eqn::NSE, fields::Vector{FlowField})
+    return fields[1]
 end
 
 function navierstokes_nonlinear!(u::FlowField, Ubase::ChebyCoeff, Wbase::ChebyCoeff, f::FlowField, tmp::FlowField, flags::DNSFlags)
@@ -326,7 +351,7 @@ function rotational_nonlinear!(u::FlowField, f::FlowField, tmp::FlowField, final
     if !geom_congruent(u, f) || num_dimensions(f) != 3
         resize!(f, u.domain.Nx, u.domain.Ny, u.domain.Nz, 3, u.domain.Lx, u.domain.Lz, u.domain.a, u.domain.b)
     end
-    set_state!(f, Physical, Physical)
+    make_state!(f, Physical, Physical)
 
     if !geom_congruent(u, vort) || num_dimensions(vort) != 3
         resize!(vort, u.domain.Nx, u.domain.Ny, u.domain.Nz, 3, u.domain.Lx, u.domain.Lz, u.domain.a, u.domain.b)
@@ -382,7 +407,7 @@ function linear!(eqn::NSE, infields::Vector{FlowField}, outfields::Vector{FlowFi
         Dz_ = Dz(infields[1], mz)
 
         for ny = 1:eqn.spatial.Nyd
-            outfields[1][mx, ny, mz, 1] = eqn.tmp.Ruk[ny] - kappa2 * eqn.tmp.uk[ny] - Dx_ * eqn.tmp.Pk[ny]
+            set_cmplx!(outfields[1], eqn.tmp.Ruk[ny] - kappa2 * eqn.tmp.uk[ny] - Dx_ * eqn.tmp.Pk[ny], mx, ny, mz, 1)
             outfields[1][mx, ny, mz, 2] = eqn.tmp.Rvk[ny] - kappa2 * eqn.tmp.vk[ny] - eqn.tmp.Pyk[ny]
             outfields[1][mx, ny, mz, 3] = eqn.tmp.Rwk[ny] - kappa2 * eqn.tmp.wk[ny] - Dz_ * eqn.tmp.Pk[ny]
         end
@@ -392,18 +417,18 @@ function linear!(eqn::NSE, infields::Vector{FlowField}, outfields::Vector{FlowFi
         if kx == 0 && kz == 0
             if length(eqn.baseflow.Ubase_yy.data) > 0
                 for ny = 1:eqn.spatial.Ny
-                    outfields[1][mx, ny, mz, 1] += Complex(flags.nu * eqn.baseflow.Ubase_yy[ny], 0.0)
+                    outfields[1].spectral_data[mx, ny, mz, 1] += Complex(flags.nu * eqn.baseflow.Ubase_yy[ny], 0.0)
                 end
             end
             if length(eqn.baseflow.Wbase_yy.data) > 0
                 for ny = 1:eqn.spatial.Ny
-                    outfields[1][mx, ny, mz, 3] += Complex(flags.nu * eqn.baseflow.Wbase_yy[ny], 0.0)
+                    outfields[1].spectral_data[mx, ny, mz, 3] += Complex(flags.nu * eqn.baseflow.Wbase_yy[ny], 0.0)
                 end
             end
 
             if flags.constraint == PressureGradient
-                outfields[1][mx, 1, mz, 1] -= Complex(eqn.baseflow.dPdx_Ref, 0.0)
-                outfields[1][mx, 1, mz, 3] -= Complex(eqn.baseflow.dPdz_Ref, 0.0)
+                outfields[1].spectral_data[mx, 1, mz, 1] -= Complex(eqn.baseflow.dPdx_Ref, 0.0)
+                outfields[1].spectral_data[mx, 1, mz, 3] -= Complex(eqn.baseflow.dPdz_Ref, 0.0)
             else
                 Ly = eqn.spatial.b - eqn.spatial.a
                 eqn.tmp.Ruk = derivative(eqn.tmp.uk)
@@ -418,16 +443,108 @@ function linear!(eqn::NSE, infields::Vector{FlowField}, outfields::Vector{FlowFi
                 if length(eqn.baseflow.Wbase.data) != 0
                     dPdzAct += flags.nu * (eval_b(Wbasey) - eval_a(Wbasey)) / Ly
                 end
-                outfields[1][mx, 1, mz, 1] -= Complex(dPdxAct, 0.0)
-                outfields[1][mx, 1, mz, 3] -= Complex(dPdzAct, 0.0)
+                outfields[1].spectral_data[mx, 1, mz, 1] -= Complex(dPdxAct, 0.0)
+                outfields[1].spectral_data[mx, 1, mz, 3] -= Complex(dPdzAct, 0.0)
             end
         end
     end
 end
 
 function solve!(eqn::NSE, outfields::Vector{FlowField}, rhs::Vector{FlowField}, s::Int, flags::DNSFlags)
-    @assert num_dimensions(outfields) == num_dimensions(rhs) + 1 "Dimension mismatch. There should be no pressure field in outfields. Outfields should be created with create_RHS."
+    # Method takes a right hand side {u} and solves for output fields {u,press}
+    @assert length(outfields) == length(rhs) + 1 "Make sure user provides correct RHS which can be created outside NSE with create_RHS()"
+
     kxmax = kx_max(outfields[1])
     kzmax = kz_max(outfields[1])
-    # TODO: finish this
+
+    # Update each Fourier mode with solution of the implicit problem
+    # Since we're not using MPI, we loop over all modes directly
+    for mx = 1:eqn.spatial.Mx
+        kx = mx_to_kx(outfields[1], mx)
+
+        for mz = 1:eqn.spatial.Mz
+            kz = mz_to_kz(outfields[1], mz)
+
+            # Skip last and aliased modes
+            if (kx == kxmax || kz == kzmax) || (dealias_xz(flags) && is_aliased_mode(kx, kz))
+                continue
+            end
+
+            # Construct ComplexChebyCoeff from RHS
+            for ny = 1:eqn.spatial.Nyd
+                eqn.tmp.Ruk[ny] = rhs[1].spectral_data[mx, ny, mz, 1]
+                eqn.tmp.Rvk[ny] = rhs[1].spectral_data[mx, ny, mz, 2]
+                eqn.tmp.Rwk[ny] = rhs[1].spectral_data[mx, ny, mz, 3]
+            end
+
+            # Solve the tau equations
+            if kx != 0 || kz != 0
+                solve!(eqn.tausolvers[s][mx][mz], eqn.tmp.uk, eqn.tmp.vk, eqn.tmp.wk, eqn.tmp.Pk,
+                    eqn.tmp.Ruk, eqn.tmp.Rvk, eqn.tmp.Rwk)
+            else  # kx,kz == 0,0
+                # LHS includes also the constant terms C which can be added to RHS
+                if length(eqn.baseflow.Ubase_yy.data) > 0
+                    for ny = 1:eqn.spatial.Ny
+                        eqn.tmp.Ruk.re[ny] += flags.nu * eqn.baseflow.Ubase_yy[ny]  # Rx has addl'l term from Ubase
+                    end
+                end
+                if length(eqn.baseflow.Wbase_yy.data) > 0
+                    for ny = 1:eqn.spatial.Ny
+                        eqn.tmp.Rwk.re[ny] += flags.nu * eqn.baseflow.Wbase_yy[ny]  # Rz has addl'l term from Wbase
+                    end
+                end
+
+                if flags.constraint == PressureGradient
+                    # pressure is supplied, put on RHS of tau eqn
+                    eqn.tmp.Ruk[1] -= Complex(eqn.baseflow.dPdx_Ref, 0)
+                    eqn.tmp.Rwk[1] -= Complex(eqn.baseflow.dPdz_Ref, 0)
+                    solve!(eqn.tausolvers[s][mx][mz], eqn.tmp.uk, eqn.tmp.vk, eqn.tmp.wk, eqn.tmp.Pk,
+                        eqn.tmp.Ruk, eqn.tmp.Rvk, eqn.tmp.Rwk)
+                    # Bulk vel is free variable determined from soln of tau eqn 
+                    # TODO: write method that computes UbulkAct everytime it is needed
+
+                else  # const bulk velocity
+                    # bulk velocity is supplied, use alternative tau solver
+
+                    # Use tausolver with additional variable and constraint:
+                    # free variable: dPdxAct at next time-step,
+                    # constraint:    UbulkBase + mean(u) = UbulkRef.
+                    solve!(eqn.tausolvers[s][mx][mz], eqn.tmp.uk, eqn.tmp.vk, eqn.tmp.wk, eqn.tmp.Pk,
+                        eqn.baseflow.dPdx_Act, eqn.baseflow.dPdz_Act, eqn.tmp.Ruk, eqn.tmp.Rvk, eqn.tmp.Rwk,
+                        eqn.baseflow.Ubulk_Ref - eqn.baseflow.Ubulk_Base,
+                        eqn.baseflow.Wbulk_Ref - eqn.baseflow.Wbulk_Base)
+
+                    @assert abs(eqn.baseflow.Ubulk_Ref - eqn.baseflow.Ubulk_Base - mean_value(eqn.tmp.uk.re)) < 1e-15 "UbulkRef != UbulkAct = UbulkBase + uk.re.mean()"
+                    @assert abs(eqn.baseflow.Wbulk_Ref - eqn.baseflow.Wbulk_Base - mean_value(eqn.tmp.wk.re)) < 1e-15 "WbulkRef != WbulkAct = WbulkBase + wk.re.mean()"
+                end
+            end
+
+            # Load solutions into u and p.
+            # Because of FFTW complex symmetries
+            # The 0,0 mode must be real.
+            # For Nx even, the kxmax,0 mode must be real
+            # For Nz even, the 0,kzmax mode must be real
+            # For Nx,Nz even, the kxmax,kzmax mode must be real
+            if ((kx == 0 && kz == 0) ||
+                (outfields[1].domain.Nx % 2 == 0 && kx == kxmax && kz == 0) ||
+                (outfields[1].domain.Nz % 2 == 0 && kz == kzmax && kx == 0) ||
+                (outfields[1].domain.Nx % 2 == 0 && outfields[1].domain.Nz % 2 == 0 && kx == kxmax && kz == kzmax))
+
+                for ny = 1:eqn.spatial.Nyd
+                    outfields[1][mx, ny, mz, 1] = Complex(real(eqn.tmp.uk[ny]), 0.0)
+                    outfields[1][mx, ny, mz, 2] = Complex(real(eqn.tmp.vk[ny]), 0.0)
+                    outfields[1][mx, ny, mz, 3] = Complex(real(eqn.tmp.wk[ny]), 0.0)
+                    outfields[2][mx, ny, mz, 1] = Complex(real(eqn.tmp.Pk[ny]), 0.0)
+                end
+            else
+                # The normal case, for general kx,kz
+                for ny = 1:eqn.spatial.Nyd
+                    outfields[1][mx, ny, mz, 1] = eqn.tmp.uk[ny]
+                    outfields[1][mx, ny, mz, 2] = eqn.tmp.vk[ny]
+                    outfields[1][mx, ny, mz, 3] = eqn.tmp.wk[ny]
+                    outfields[2][mx, ny, mz, 1] = eqn.tmp.Pk[ny]
+                end
+            end
+        end
+    end
 end

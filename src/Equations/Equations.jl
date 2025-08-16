@@ -1,8 +1,14 @@
 module Equations
 
+using ..FlowFields
+using ..DNSSettings
+import ..HelmholtzSolver: solve!
+
 #=
 Generalized code for defining *equations* for DNS simulations.
 =#
+
+export Equation, nonlinear!, linear!, solve!, create_RHS, reset_lambda!
 
 """
     Equation
@@ -45,8 +51,10 @@ function create_RHS(eqn::Equation, fields::Vector{FlowField})
     error("create_RHS function not implemented for $(typeof(eqn))")
 end
 
-function reset_lambda(eqn::Equation, lambda_t::Vector{Real})
+function reset_lambda!(eqn::Equation, lambda_t::Vector{Real}, flags::DNSFlags)
     error("reset_lambda function not implemented for $(typeof(eqn))")
 end
+
+include("navier_stokes.jl")
 
 end
