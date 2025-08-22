@@ -6,7 +6,7 @@ import Base.@kwdef
 
 import ..TauSolvers: solve!
 
-export NSE
+export NSE, nonlinear!
 
 function profile(ff::FlowField, mx::Int, mz::Int, i::Int)
     ret = ChebyCoeff{ComplexF64}(ff.domain.Ny, ff.domain.a, ff.domain.b, y_state(ff))
@@ -150,7 +150,7 @@ end
 
 @kwdef mutable struct NSE <: Equation
     lambda_t::Vector{Real}
-    tausolvers::Union{Vector{Vector{Vector{TauSolver}}},Vector{Vector{Vector{UndefInitializer}}},Int}
+    tausolvers::Union{AbstractArray,Nothing}
 
     # Refactored components
     spatial::SpatialParameters
@@ -326,7 +326,7 @@ function NSE(fields::Vector{FlowField{T}}, flags::DNSFlags) where T<:Number
 
     return NSE(
         lambda_t=[0.0],
-        tausolvers=0,
+        tausolvers=nothing,
         spatial=spatial,
         baseflow=baseflow,
         tmp=transients
@@ -336,23 +336,33 @@ end
 function reset_lambda!(eqn::NSE, lambda_t::Vector{T}, flags::DNSFlags) where {T<:Real}
     eqn.lambda_t = lambda_t
 
-    if eqn.tausolvers == 0
-        eqn.tausolvers = [[[TauSolver() for _ in 1:eqn.spatial.Mz] for _ in 1:eqn.spatial.Mx] for _ in 1:length(lambda_t)]
-    end
-
     c = 4.0 * pi^2 * flags.nu
-    for j = 1:length(lambda_t), mx = 1:eqn.spatial.Mx, mz = 1:eqn.spatial.Mz
-        kx = mx_to_kx(eqn.tmp.ff, mx)
-        kz = mz_to_kz(eqn.tmp.ff, mz)
-        lambda = lambda_t[j] + c * ((kx / eqn.spatial.Lx)^2 + (kz / eqn.spatial.Lz)^2)
-        if (kx != kx_max(eqn.tmp.ff) || kz != kz_max(eqn.tmp.ff)) && (!dealias_xz(flags) || !is_aliased(eqn.tmp.ff, kx, kz))
-            eqn.tausolvers[j][mx][mz] = TauSolver(kx, kz, eqn.spatial.Lx, eqn.spatial.Lz, eqn.spatial.a, eqn.spatial.b, lambda, flags.nu, eqn.spatial.Nyd, flags.taucorrection)
+
+    # Create the fully configured 3D array of TauSolver objects in one step.
+    eqn.tausolvers = [
+        begin
+            # These calculations are done for each element of the new array
+            kx = mx_to_kx(eqn.tmp.ff, mx)
+            kz = mz_to_kz(eqn.tmp.ff, mz)
+
+            # Check the condition for this element
+            if (kx != kx_max(eqn.tmp.ff) || kz != kz_max(eqn.tmp.ff)) && (!dealias_xz(flags) || !is_aliased(eqn.tmp.ff, kx, kz))
+                lambda = lambda_t[j] + c * ((kx / eqn.spatial.Lx)^2 + (kz / eqn.spatial.Lz)^2)
+
+                # Construct the configured TauSolver for this grid point
+                TauSolver(kx, kz, eqn.spatial.Lx, eqn.spatial.Lz, eqn.spatial.a, eqn.spatial.b, lambda, flags.nu, eqn.spatial.Nyd, flags.taucorrection)
+            else
+                # Provide a default-constructed TauSolver if the condition is not met
+                TauSolver()
+            end
         end
-    end
+        # Define the iteration ranges for the 3D array
+        for j in 1:length(lambda_t), mx in 1:eqn.spatial.Mx, mz in 1:eqn.spatial.Mz
+    ]
 end
 
-function create_RHS(eqn::NSE, fields::Vector{FlowField})
-    return fields[1]
+function create_RHS(eqn::NSE, fields::Vector{FlowField{T}}) where {T<:Number}
+    return [fields[1]]
 end
 
 function navierstokes_nonlinear!(u::FlowField, Ubase::ChebyCoeff, Wbase::ChebyCoeff, f::FlowField, tmp::FlowField, flags::DNSFlags)
@@ -403,7 +413,7 @@ function navierstokes_nonlinear!(u::FlowField, Ubase::ChebyCoeff, Wbase::ChebyCo
         make_spectral!(f)
     end
 
-    u -= Ubase
+    # u -= Ubase
     make_spectral!(u)
 end
 
@@ -415,7 +425,7 @@ Calculates the nonlinear terms of the Navier Stokes equations.
 function nonlinear!(eqn::NSE, infields::Vector{FlowField}, outfields::Vector{FlowField}, flags::DNSFlags)
     navierstokes_nonlinear!(infields[1], eqn.baseflow.Ubase, eqn.baseflow.Wbase, outfields[1], eqn.tmp.ff, flags)
     if dealias_xz(flags)
-        zero_padding!(outfields[1])
+        zero_padded_modes!(outfields[1])
     end
 end
 
@@ -527,7 +537,7 @@ function linear!(eqn::NSE, infields::Vector{FlowField}, outfields::Vector{FlowFi
     end
 end
 
-function solve!(eqn::NSE, outfields::Vector{FlowField{T}}, rhs::Vector{FlowField{T}}, s::Int, flags::DNSFlags) where {T<:Number}
+function solve!(eqn::NSE, outfields::Union{AbstractArray{FlowField},AbstractArray{FlowField{T}}}, rhs::AbstractArray{FlowField{T}}, s::Int, flags::DNSFlags) where {T<:Number}
     # Method takes a right hand side {u} and solves for output fields {u,press}
     @assert length(outfields) == length(rhs) + 1 "Make sure user provides correct RHS which can be created outside NSE with create_RHS()"
 
@@ -555,8 +565,9 @@ function solve!(eqn::NSE, outfields::Vector{FlowField{T}}, rhs::Vector{FlowField
             end
 
             # Solve the tau equations
+            println("TauSolvers has dimensions: ", size(eqn.tausolvers))
             if kx != 0 || kz != 0
-                solve!(eqn.tausolvers[s][mx][mz], eqn.tmp.uk, eqn.tmp.vk, eqn.tmp.wk, eqn.tmp.Pk,
+                solve!(eqn.tausolvers[s, mx, mz], eqn.tmp.uk, eqn.tmp.vk, eqn.tmp.wk, eqn.tmp.Pk,
                     eqn.tmp.Ruk, eqn.tmp.Rvk, eqn.tmp.Rwk)
             else  # kx,kz == 0,0
                 # LHS includes also the constant terms C which can be added to RHS
@@ -575,7 +586,7 @@ function solve!(eqn::NSE, outfields::Vector{FlowField{T}}, rhs::Vector{FlowField
                     # pressure is supplied, put on RHS of tau eqn
                     eqn.tmp.Ruk[1] -= Complex(eqn.baseflow.dPdx_Ref, 0)
                     eqn.tmp.Rwk[1] -= Complex(eqn.baseflow.dPdz_Ref, 0)
-                    solve!(eqn.tausolvers[s][mx][mz], eqn.tmp.uk, eqn.tmp.vk, eqn.tmp.wk, eqn.tmp.Pk,
+                    solve!(eqn.tausolvers[s, mx, mz], eqn.tmp.uk, eqn.tmp.vk, eqn.tmp.wk, eqn.tmp.Pk,
                         eqn.tmp.Ruk, eqn.tmp.Rvk, eqn.tmp.Rwk)
                     # Bulk vel is free variable determined from soln of tau eqn 
                     # TODO: write method that computes UbulkAct everytime it is needed
