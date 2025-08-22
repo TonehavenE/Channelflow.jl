@@ -23,27 +23,34 @@ function curl!(f::FlowField, curlf::FlowField)
     # curlf[1] = df[3]/dy - df[2]/dz  (Julia 1-based indexing)
     # assign curlf[1] =  df[3]/dy;
     for mx = 1:Mx, mz = 1:Mz
-        curlf[mx, My, mz, 1] = ComplexF64(0)
-        curlf[mx, My-1, mz, 1] = (My - 1) * scale * f[mx, My, mz, 3]
+        set_cmplx!(curlf, ComplexF64(0.0), mx, My, mz, 1)
+        set_cmplx!(curlf, (My - 1) * scale * cmplx(f, mx, My, mz, 3), mx, My - 1, mz, 1)
+        # curlf[mx, My-1, mz, 1] = (My - 1) * scale * f[mx, My, mz, 3]
     end
     for mx = 1:Mx, my = (My-2):-1:1, mz = 1:Mz
-        curlf[mx, my, mz, 1] = curlf[mx, my+2, mz, 1] + (my + 1) * scale * f[mx, my+1, mz, 3]
+        # curlf[mx, my, mz, 1] = curlf[mx, my+2, mz, 1] + (my + 1) * scale * f[mx, my+1, mz, 3]
+        set_cmplx!(curlf, cmplx(curlf, mx, my + 2, mz, 1) + (my + 1) * scale * cmplx(f, mx, my + 1, mz, 3), mx, my, mz, 1)
     end
     for mx = 1:Mx, mz = 1:Mz
-        curlf[mx, 1, mz, 1] *= 0.5
+        # curlf[mx, 1, mz, 1] *= 0.5
+        set_cmplx!(curlf, 0.5 * cmplx(curlf, mx, 1, mz, 1), mx, 1, mz, 1)
     end
 
     # curlf[3] = df[2]/dx - df[1]/dy  (Julia 1-based indexing)  
     # assign curlf[3] = -df[1]/dy;
     for mx = 1:Mx, mz = 1:Mz
-        curlf[mx, My, mz, 3] = ComplexF64(0)
-        curlf[mx, My-1, mz, 3] = -(My - 1) * scale * f[mx, My, mz, 1]
+        # curlf[mx, My, mz, 3] = ComplexF64(0)
+        set_cmplx!(curlf, ComplexF64(0.0), mx, My, mz, 3)
+        # curlf[mx, My-1, mz, 3] = -(My - 1) * scale * f[mx, My, mz, 1]
+        set_cmplx!(curlf, -(My - 1) * scale * cmplx(f, mx, My, mz, 1), mx, My - 1, mz, 3)
     end
     for my = (My-2):-1:1, mx = 1:Mx, mz = 1:Mz
-        curlf[mx, my, mz, 3] = curlf[mx, my+2, mz, 3] - (my + 1) * scale * f[mx, my+1, mz, 1]
+        # curlf[mx, my, mz, 3] = curlf[mx, my+2, mz, 3] - (my + 1) * scale * f[mx, my+1, mz, 1]
+        set_cmplx!(curlf, cmplx(curlf, mx, my + 2, mz, 3) - (my + 1) * scale * cmplx(f, mx, my + 1, mz, 1), mx, my, mz, 3)
     end
     for mx = 1:Mx, mz = 1:Mz
-        curlf[mx, 1, mz, 3] *= 0.5
+        # curlf[mx, 1, mz, 3] *= 0.5
+        set_cmplx!(curlf, 0.5 * cmplx(curlf, mx, 1, mz, 3), mx, 1, mz, 3)
     end
 
     # Assign d/dx and d/dz terms to curl
@@ -53,19 +60,22 @@ function curl!(f::FlowField, curlf::FlowField)
         for mz = 1:Mz
             kz = mz_to_kz(f, mz)  # Note: was mx_to_kz in original, should be mz_to_kz
             d_dz = Complex(0.0, 2 * pi * kz / Lz_ * zero_last_mode(kz, kzmax, 1))
-            f0 = f[mx, my, mz, 1]  # f[0] in C++ = f[1] in Julia
-            f1 = f[mx, my, mz, 2]  # f[1] in C++ = f[2] in Julia
-            f2 = f[mx, my, mz, 3]  # f[2] in C++ = f[3] in Julia
-            curlf[mx, my, mz, 1] -= d_dz * f1
-            curlf[mx, my, mz, 2] = d_dz * f0 - d_dx * f2
-            curlf[mx, my, mz, 3] += d_dx * f1
+            f0 = cmplx(f, mx, my, mz, 1)  # f[0] in C++ = f[1] in Julia
+            f1 = cmplx(f, mx, my, mz, 2)  # f[1] in C++ = f[2] in Julia
+            f2 = cmplx(f, mx, my, mz, 3)  # f[2] in C++ = f[3] in Julia
+            # curlf[mx, my, mz, 1] -= d_dz * f1
+            set_cmplx!(curlf, cmplx(curlf, mx, my, mz, 1) - d_dz * f1, mx, my, mz, 1)
+            # curlf[mx, my, mz, 2] = d_dz * f0 - d_dx * f2
+            set_cmplx!(curlf, d_dz * f0 - d_dx * f2, mx, my, mz, 2)
+            # curlf[mx, my, mz, 3] += d_dx * f1
+            set_cmplx!(curlf, cmplx(curlf, mx, my, mz, 3) + d_dx * f1, mx, my, mz, 3)
         end
     end
 
     make_state!(f, sxz, sy)
 end
 
-function cross!(f::FlowField, g::FlowField, fcg::FlowField)
+function cross!(f::FlowField{T}, g::FlowField{T}, fcg::FlowField{T}, finalstate::FieldState=Spectral) where {T<:Number}
     # Store original states to restore later
     fxz = xz_state(f)
     fy = y_state(f)
@@ -107,5 +117,7 @@ function cross!(f::FlowField, g::FlowField, fcg::FlowField)
     make_state!(g, gxz, gy)
 
     # Convert result to spectral space
-    make_spectral!(fcg)
+    if finalstate == Spectral
+        make_spectral!(fcg)
+    end
 end
