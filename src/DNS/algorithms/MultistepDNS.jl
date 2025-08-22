@@ -12,6 +12,18 @@ mutable struct MultistepDNS <: DNSAlgorithm
     countdown::Int
 end
 
+function order(DNS::MultistepDNS)
+    return DNS.common.order
+end
+
+function equations(DNS::MultistepDNS)
+    return DNS.common.equations
+end
+
+function flags(DNS::MultistepDNS)
+    return DNS.common.flags
+end
+
 function MultistepDNS(fields::Vector{FlowField{T}}, equations::Equation, flags::DNSFlags) where {T}
     algorithm = flags.timestepping
     if algorithm == SBDF1
@@ -89,31 +101,31 @@ function MultistepDNS(other::MultistepDNS)
     )
 end
 
-function advance!(alg::MultistepDNS, fields::Vector{FlowField}, num_steps::Int)
-    J = alg.order - 1
-    rhs = create_RHS(alg.equations, fields)
+function advance!(alg::MultistepDNS, fields::Vector{FlowField{T}}, num_steps::Int) where {T<:Number}
+    J = order(alg) - 1
+    rhs = create_RHS(equations(alg), fields)
     len = length(rhs)
-    alg.fields[1] = fields
+    alg.fields_history[1] = fields
 
     # time stepping loop
     for step = 1:num_steps
-        if alg.order > 0
+        if order(alg) > 0
             # evaluate nonlinear terms
-            nonlinear(alg.equations, alg.fields_history[1], alg.nonlf_history[1])
+            nonlinear!(equations(alg), alg.fields_history[1], alg.nonlf_history[1], flags(alg))
         end
 
         for l = 1:len
             set_to_zero!(rhs[l])
             # sum over multistep loop
-            for j = 1:order
-                a = -alg.alpha[j] / alg.flags.dt
+            for j = 1:order(alg)
+                a = -alg.alpha[j] / flags(alg).dt
                 b = -alg.beta[j]
                 rhs[l] += a * alg.fields_history[j][l] + b * alg.nonlf_history[j][l]
             end
         end
 
         # solve the implicit problem 
-        solve!(alg.equations, alg.fields[J], rhs, num_steps, flags)
+        solve!(equations(alg), alg.fields_history[J], rhs, num_steps, flags(alg))
         # now we need to shift all of the fields over...
 
         for j = J:-1:1
@@ -122,7 +134,7 @@ function advance!(alg::MultistepDNS, fields::Vector{FlowField}, num_steps::Int)
                 swap!(alg.nonlf_history[j][l], alg.nonlf_history[j-1][l])
             end
         end
-        alg.t += alg.flags.dt
+        alg.t += flags(alg).dt
     end
     fields = alg.fields[1]
 
