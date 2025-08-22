@@ -47,7 +47,7 @@ end
 Set aliased (high-frequency) modes to zero for dealiasing.
 Requires FlowField to be in spectral state.
 """
-function zero_padded_modes!(ff::FlowField)
+function zero_padded_modes!(ff::FlowField{T}) where {T<:Number}
     @assert ff.xz_state == Spectral "Must be in spectral state to zero padded modes"
     @assert ff.spectral_data !== nothing "Spectral data must be allocated"
 
@@ -60,8 +60,7 @@ function zero_padded_modes!(ff::FlowField)
                     kz = mz_to_kz(ff, mz)
 
                     if is_aliased(ff, kx, kz)
-                        ff.spectral_data[mx, my, mz, i] =
-                            Complex{eltype(ff.spectral_data)}(0)
+                        set_cmplx!(ff, ComplexF64(0), mx, my, mz, i)
                     end
                 end
             end
