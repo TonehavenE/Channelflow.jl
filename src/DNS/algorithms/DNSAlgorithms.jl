@@ -91,5 +91,6 @@ function DNSAlgorithmCommon(fields::Vector{FlowField}, equation::Equation, flags
 end
 
 include("MultistepDNS.jl")
+include("RungeKuttaDNS.jl")
 
 end
