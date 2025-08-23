@@ -11,6 +11,9 @@ function simple_channel_flow_example()
     # Physical parameters
     nu = 10.01  # Viscosity
     dPdx = -1.0  # Pressure gradient driving the flow
+    T = 30.0
+    n = 32
+    dt = 1.0 / n
 
     # Create DNS flags
     flags = DNSFlags(
@@ -20,7 +23,8 @@ function simple_channel_flow_example()
         baseflow=ParabolicBase,
         constraint=PressureGradient,
         dealiasing=DealiasXZ,
-        timestepping=SBDF3
+        timestepping=SBDF3,
+        dt=dt
     )
 
     # Create velocity and pressure fields
@@ -54,6 +58,18 @@ function simple_channel_flow_example()
     nse = NSE(fields, flags)
     dns = MultistepDNS(fields, nse, flags)
 
+    runge_flags = DNSFlags(
+        nu=nu,
+        dPdx=dPdx,
+        dPdz=0.0,
+        baseflow=ParabolicBase,
+        constraint=PressureGradient,
+        dealiasing=DealiasXZ,
+        timestepping=CNRK2,
+        dt=dt
+    )
+    runge_test = RungeKuttaDNS(fields, nse, runge_flags)
+
     println("Domain: $(Nx)×$(Ny)×$(Nz), Lx=$(Lx), Lz=$(Lz)")
     println("Viscosity: $(nu), Pressure gradient: $(dPdx)")
     println("Base flow: $(flags.baseflow)")
@@ -83,6 +99,17 @@ function simple_channel_flow_example()
     catch e
         println("✗ Solver failed with error: $e")
         rethrow(e)
+    end
+
+    make_spectral!(u)
+    make_spectral!(p)
+    for t = 0:n*dt:T
+        println("Time: $(t)")
+        println("L2Norm: $(L2Norm(fields[1]))")
+        println("The flowfield is:")
+        display(fields[1])
+
+        advance!(runge_test, fields, n)
     end
 
     return
