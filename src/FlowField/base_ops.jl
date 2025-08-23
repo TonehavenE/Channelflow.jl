@@ -223,3 +223,22 @@ function Base.display(ff::FlowField)
         end
     end
 end
+
+"""
+    copy!(dst, src)
+
+Copies `src` to `dst`.
+"""
+function Base.copy!(dst::FlowField{T}, src::FlowField{T}) where {T}
+    @assert congruent(dst, src) "FlowFields must be congruent"
+    @assert dst.xz_state == src.xz_state && dst.y_state == src.y_state "FlowFields must be in same state"
+
+    data1 = _current_data(dst)
+    data2 = _current_data(src)
+
+    if data1 !== nothing && data2 !== nothing
+        data1 .= data2
+    end
+
+    return dst
+end
