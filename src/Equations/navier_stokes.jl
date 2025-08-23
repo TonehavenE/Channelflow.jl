@@ -422,7 +422,7 @@ end
 
 Calculates the nonlinear terms of the Navier Stokes equations.
 """
-function nonlinear!(eqn::NSE, infields::Vector{FlowField}, outfields::Vector{FlowField}, flags::DNSFlags)
+function nonlinear!(eqn::NSE, infields::Vector{<:FlowField}, outfields::Vector{<:FlowField}, flags::DNSFlags)
     navierstokes_nonlinear!(infields[1], eqn.baseflow.Ubase, eqn.baseflow.Wbase, outfields[1], eqn.tmp.ff, flags)
     if dealias_xz(flags)
         zero_padded_modes!(outfields[1])
@@ -459,8 +459,8 @@ function rotational_nonlinear!(u::FlowField, f::FlowField, tmp::FlowField, final
     return
 end
 
-function linear!(eqn::NSE, infields::Vector{FlowField}, outfields::Vector{FlowField}, flags::DNSFlags)
-    @assert num_dimensions(infields) == num_dimensions(outfields) + 1 "Dimension mismatch. There should be no pressure field in outfields. Outfields should be create with create_RHS."
+function linear!(eqn::NSE, infields::Vector{<:FlowField}, outfields::Vector{<:FlowField}, flags::DNSFlags)
+    @assert length(infields) == length(outfields) + 1 "Dimension mismatch. There should be no pressure field in outfields. Outfields should be create with create_RHS."
 
     kxmax = kx_max(infields[1])
     kzmax = kz_max(infields[1])
@@ -477,11 +477,11 @@ function linear!(eqn::NSE, infields::Vector{FlowField}, outfields::Vector{FlowFi
             break
         end
 
-        for ny = 1:eqn.Nyd
-            eqn.tmp.uk[ny] = flags.nu * infields[1][mx, ny, mz, 1]
-            eqn.tmp.vk[ny] = flags.nu * infields[1][mx, ny, mz, 2]
-            eqn.tmp.wk[ny] = flags.nu * infields[1][mx, ny, mz, 3]
-            eqn.tmp.Pk[ny] = infields[2][mx, ny, mz, 1]
+        for ny = 1:eqn.spatial.Nyd
+            eqn.tmp.uk[ny] = flags.nu * cmplx(infields[1], mx, ny, mz, 1)
+            eqn.tmp.vk[ny] = flags.nu * cmplx(infields[1], mx, ny, mz, 2)
+            eqn.tmp.wk[ny] = flags.nu * cmplx(infields[1], mx, ny, mz, 3)
+            eqn.tmp.Pk[ny] = cmplx(infields[2], mx, ny, mz, 1)
         end
 
         eqn.tmp.Ruk = derivative2(eqn.tmp.uk)
@@ -495,8 +495,8 @@ function linear!(eqn::NSE, infields::Vector{FlowField}, outfields::Vector{FlowFi
 
         for ny = 1:eqn.spatial.Nyd
             set_cmplx!(outfields[1], eqn.tmp.Ruk[ny] - kappa2 * eqn.tmp.uk[ny] - Dx_ * eqn.tmp.Pk[ny], mx, ny, mz, 1)
-            outfields[1][mx, ny, mz, 2] = eqn.tmp.Rvk[ny] - kappa2 * eqn.tmp.vk[ny] - eqn.tmp.Pyk[ny]
-            outfields[1][mx, ny, mz, 3] = eqn.tmp.Rwk[ny] - kappa2 * eqn.tmp.wk[ny] - Dz_ * eqn.tmp.Pk[ny]
+            set_cmplx!(outfields[1], eqn.tmp.Rvk[ny] - kappa2 * eqn.tmp.vk[ny] - eqn.tmp.Pyk[ny], mx, ny, mz, 2)
+            set_cmplx!(outfields[1], eqn.tmp.Rwk[ny] - kappa2 * eqn.tmp.wk[ny] - Dz_ * eqn.tmp.Pk[ny], mx, ny, mz, 3)
         end
 
         # add const terms
@@ -565,7 +565,6 @@ function solve!(eqn::NSE, outfields::Union{AbstractArray{FlowField},AbstractArra
             end
 
             # Solve the tau equations
-            println("TauSolvers has dimensions: ", size(eqn.tausolvers))
             if kx != 0 || kz != 0
                 solve!(eqn.tausolvers[s, mx, mz], eqn.tmp.uk, eqn.tmp.vk, eqn.tmp.wk, eqn.tmp.Pk,
                     eqn.tmp.Ruk, eqn.tmp.Rvk, eqn.tmp.Rwk)
