@@ -21,7 +21,7 @@ abstract type Equation end
     nonlinear!(eqn, infields, outfields)
 Calculates the nonlinear terms of the equation.
 """
-function nonlinear!(eqn::Equation, infields::Vector{FlowField}, outfields::Vector{FlowField})
+function nonlinear!(eqn::Equation, infields::Vector{<:FlowField}, outfields::Vector{<:FlowField})
     error("Nonlinear function not implemented for $(typeof(eqn))")
 end
 
@@ -29,7 +29,7 @@ end
     linear!(eqn, infields, outfields)
 Calculates the linear terms of the equation.
 """
-function linear!(eqn::Equation, infields::Vector{FlowField}, outfields::Vector{FlowField})
+function linear!(eqn::Equation, infields::Vector{<:FlowField}, outfields::Vector{<:FlowField})
     error("Linear function not implemented for $(typeof(eqn))")
 end
 
