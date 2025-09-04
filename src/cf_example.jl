@@ -106,8 +106,8 @@ function simple_channel_flow_example()
     for t = 0:n*dt:T
         println("Time: $(t)")
         println("L2Norm: $(L2Norm(fields[1]))")
-        println("The flowfield is:")
-        display(fields[1])
+        # println("The flowfield is:")
+        # display(fields[1])
 
         advance!(runge_test, fields, n)
     end

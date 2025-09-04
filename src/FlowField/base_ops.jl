@@ -164,7 +164,7 @@ end
 """
     add!(ff, a, ff1, b, ff2)
 
-In-place linear combination: ff = a*ff1 + b*ff2
+In-place linear combination: ff += a*ff1 + b*ff2
 """
 function add!(
     ff::FlowField{T},
@@ -176,6 +176,7 @@ function add!(
     @assert congruent(ff, ff1) && congruent(ff, ff2) "All FlowFields must be congruent"
     @assert ff1.xz_state == ff2.xz_state && ff1.y_state == ff2.y_state "Input FlowFields must be in same state"
 
+    # TODO: speed this up, currently testing to make better
     # Update state to match inputs
     ff.xz_state = ff1.xz_state
     ff.y_state = ff1.y_state
@@ -186,10 +187,13 @@ function add!(
     data2 = _current_data(ff2)
 
     if data !== nothing && data1 !== nothing && data2 !== nothing
-        data .= a .* data1 .+ b .* data2
-    end
+        if ff.xz_state == Physical
+            ff.physical_data .+= a .* data1 .+ b .* data2
+        else
+            ff.spectral_data .+= a .* data1 .+ b .* data2
+        end
 
-    return ff
+    end
 end
 
 function Base.display(ff::FlowField)

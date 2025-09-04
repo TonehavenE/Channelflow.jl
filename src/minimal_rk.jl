@@ -30,6 +30,8 @@ function minimal_rk_test()
 
     # Initialize the velocity field to zero. With no forcing, it should stay zero.
     set_to_zero!(u)
+    make_physical!(u)
+    u[1, 1, 1, 1] = 1.0
     make_spectral!(u) # Solver works with spectral data
 
     # Create the Navier-Stokes equation solver and the Runge-Kutta time-stepper
@@ -43,14 +45,14 @@ function minimal_rk_test()
     # 3. RUN THE TIME-STEPPING LOOP
     # num_steps = round(Int, flags.T / flags.dt)
     num_steps = 10
-    for n in 0:num_steps
+    for n in 0:(num_steps-1)
         t = n * dt
 
         # Calculate and print the L2 Norm of the velocity field.
         # This represents the total kinetic energy of the perturbation.
         norm_u = L2Norm(u)
         @printf "%-10.4f %-20.12e\n" t norm_u
-        display(u)
+        # display(u)
 
         # If the norm becomes NaN or explodes, stop the simulation.
         if isnan(norm_u) || norm_u > 1e10

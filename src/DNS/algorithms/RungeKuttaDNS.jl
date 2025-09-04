@@ -77,21 +77,14 @@ function advance!(alg::RungeKuttaDNS, fields::Vector{FlowField{T}}, Nsteps::Int)
         for j in 1:alg.Nsubsteps
             uj = fields # Alias for clarity
 
+
             # Update nonlinear history: Q_{j+1} = A_j * Q_j + N(u_j)
-            # Note: The C++ code uses Qj_[0] *= A_[j]. This implies Qj_ is a single FlowField,
-            # but the logic seems to apply to a vector of fields. Here we assume a vector.
-            for i in eachindex(alg.Qj)
-                scale!(alg.Qj[i], alg.A[j])
-            end
+            scale!(alg.Qj[1], alg.A[j])
 
             # The function `nonlinear!` calculates N(u_j) and stores it in Qj1
             nonlinear!(alg.common.equations, uj, alg.Qj1, alg.common.flags)
 
-            # Note: C++ does Qj -= Qj1 because their nonlinear term is defined as u*grad(u), 
-            # while the formula uses N(u) = -u*grad(u). Your `nonlinear!` should match this.
-            for i in eachindex(alg.Qj)
-                subtract!(alg.Qj[i], alg.Qj1[i])
-            end
+            subtract!(alg.Qj[1], alg.Qj1[1])
 
             # Get linear term
             linear!(alg.common.equations, uj, lt, alg.common.flags)
@@ -102,14 +95,27 @@ function advance!(alg::RungeKuttaDNS, fields::Vector{FlowField{T}}, Nsteps::Int)
                 # Start with the linear term
                 copy!(rhs[l], lt[l])
 
-                # Add the multistep terms: add!(ff, a, ff1, b, ff2) => ff = a*ff1 + b*ff2
-                # Here we do: rhs = 1.0*lt + lambda_t*uj + B_C*Qj
-                # We use an intermediate add! to achieve this
-                add!(rhs[l], alg.common.lambda_t[j], uj[l]) # rhs += lambda_t*uj
-                add!(rhs[l], B_C, alg.Qj[l]) # rhs += B_C*Qj
+                # println("DEBUGGING COMBINE TERMS:")
+                # println("rhs[$l] is:")
+                # display(rhs[l])
+                # println("alg.common.lambda_t[$j] is:")
+                # display(alg.common.lambda_t[j])
+                # println("uj[$l] is:")
+                # display(uj[l])
+                # println("B_C is:")
+                # display(B_C)
+                # println("alg.Qj[$l] is:")
+                # display(alg.Qj[l])
+                #
+                add!(rhs[l], alg.common.lambda_t[j], uj[l], B_C, alg.Qj[l])
+
+                # println("\n\n\n=====================")
+                # println("after add!, rhs[$l] is:")
+                # display(rhs[l])
             end
 
             # Solve the implicit system: L(u_j) - lambda_t * u_j = RHS
+
             solve!(alg.common.equations, fields, rhs, j, alg.common.flags)
         end # End of substep loop
 

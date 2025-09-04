@@ -289,7 +289,7 @@ function init_cf_constraint(Ubase::ChebyCoeff, Wbase::ChebyCoeff, u::FlowField, 
     )
 end
 
-function NSE(fields::Vector{FlowField{T}}, flags::DNSFlags) where T<:Number
+function NSE(fields::Vector{FlowField{T}}, flags::DNSFlags) where {T<:Number}
     u = fields[1]
     Nyd = dealias_y(flags) ? 2 * (num_y_modes(u) - 1) / 3 + 1 : num_y_modes(u)
     kxd_max = dealias_xz(flags) ? div(u.domain.Nx, 3) - 1 : kx_max(u)
@@ -362,7 +362,7 @@ function reset_lambda!(eqn::NSE, lambda_t::Vector{T}, flags::DNSFlags) where {T<
 end
 
 function create_RHS(eqn::NSE, fields::Vector{FlowField{T}}) where {T<:Number}
-    return [fields[1]]
+    return [FlowField(fields[1])]
 end
 
 function navierstokes_nonlinear!(u::FlowField, Ubase::ChebyCoeff, Wbase::ChebyCoeff, f::FlowField, tmp::FlowField, flags::DNSFlags)
@@ -413,7 +413,7 @@ function navierstokes_nonlinear!(u::FlowField, Ubase::ChebyCoeff, Wbase::ChebyCo
         make_spectral!(f)
     end
 
-    # u -= Ubase
+    u -= Ubase
     make_spectral!(u)
 end
 
@@ -459,6 +459,108 @@ function rotational_nonlinear!(u::FlowField, f::FlowField, tmp::FlowField, final
     return
 end
 
+function linear!(eqn::NSE, infields::Vector{<:FlowField}, outfields::Vector{<:FlowField}, flags::DNSFlags)
+    @assert length(infields) == length(outfields) + 1 "Dimension mismatch. There should be no pressure field in outfields."
+
+    # Use correct field indices (assuming 1-based indexing for Julia vectors)
+    u_field = infields[1]  # velocity field
+    p_field = infields[2]  # pressure field
+
+    kxmax = kx_max(u_field)
+    kzmax = kz_max(u_field)
+    Lx_ = u_field.domain.Lx
+    Lz_ = u_field.domain.Lz
+    Mx = u_field.domain.Mx
+    Mz = u_field.domain.Mz
+
+    for mx = 1:Mx
+        kx = mx_to_kx(u_field, mx)  # FIXED: correct function call
+
+        for mz = 1:Mz
+            kz = mz_to_kz(u_field, mz)  # FIXED: correct function call
+
+            # FIXED: Skip aliased modes, but continue to next iteration
+            if (kx == kxmax || kz == kzmax) || (dealias_xz(flags) && is_aliased(u_field, kx, kz))
+                continue  # Skip this mode, continue with next mz
+            end
+
+            # Extract Fourier modes
+            for ny = 1:eqn.spatial.Nyd
+                eqn.tmp.uk[ny] = flags.nu * cmplx(u_field, mx, ny, mz, 1)  # u component
+                eqn.tmp.vk[ny] = flags.nu * cmplx(u_field, mx, ny, mz, 2)  # v component  
+                eqn.tmp.wk[ny] = flags.nu * cmplx(u_field, mx, ny, mz, 3)  # w component
+                eqn.tmp.Pk[ny] = cmplx(p_field, mx, ny, mz, 1)             # pressure
+            end
+
+            # Compute second derivatives
+            eqn.tmp.Ruk = derivative2(eqn.tmp.uk)
+            eqn.tmp.Rvk = derivative2(eqn.tmp.vk)
+            eqn.tmp.Rwk = derivative2(eqn.tmp.wk)
+
+            # Compute pressure gradient in y
+            eqn.tmp.Pyk = derivative(eqn.tmp.Pk)
+
+            # Compute linear terms
+            kappa2 = 4 * pi^2 * ((kx / Lx_)^2 + (kz / Lz_)^2)
+            Dx_ = Dx(u_field, mx)
+            Dz_ = Dz(u_field, mz)
+
+            for ny = 1:eqn.spatial.Nyd
+                # FIXED: Use consistent accessor functions
+                set_cmplx!(outfields[1], eqn.tmp.Ruk[ny] - kappa2 * eqn.tmp.uk[ny] - Dx_ * eqn.tmp.Pk[ny], mx, ny, mz, 1)
+                set_cmplx!(outfields[1], eqn.tmp.Rvk[ny] - kappa2 * eqn.tmp.vk[ny] - eqn.tmp.Pyk[ny], mx, ny, mz, 2)
+                set_cmplx!(outfields[1], eqn.tmp.Rwk[ny] - kappa2 * eqn.tmp.wk[ny] - Dz_ * eqn.tmp.Pk[ny], mx, ny, mz, 3)
+            end
+
+            # Add constant terms for kx=0, kz=0 mode
+            if kx == 0 && kz == 0
+                if length(eqn.baseflow.Ubase_yy.data) > 0
+                    for ny = 1:eqn.spatial.Ny
+                        current_val = cmplx(outfields[1], mx, ny, mz, 1)
+                        set_cmplx!(outfields[1], current_val + Complex(flags.nu * eqn.baseflow.Ubase_yy[ny], 0.0), mx, ny, mz, 1)
+                    end
+                end
+                if length(eqn.baseflow.Wbase_yy.data) > 0
+                    for ny = 1:eqn.spatial.Ny
+                        current_val = cmplx(outfields[1], mx, ny, mz, 3)
+                        set_cmplx!(outfields[1], current_val + Complex(flags.nu * eqn.baseflow.Wbase_yy[ny], 0.0), mx, ny, mz, 3)
+                    end
+                end
+
+                if flags.constraint == PressureGradient
+                    # Apply reference pressure gradient
+                    current_u = cmplx(outfields[1], mx, 1, mz, 1)
+                    current_w = cmplx(outfields[1], mx, 1, mz, 3)
+                    set_cmplx!(outfields[1], current_u - Complex(eqn.baseflow.dPdx_Ref, 0.0), mx, 1, mz, 1)
+                    set_cmplx!(outfields[1], current_w - Complex(eqn.baseflow.dPdz_Ref, 0.0), mx, 1, mz, 3)
+                else
+                    # Bulk velocity constraint - compute actual pressure gradient
+                    Ly = eqn.spatial.b - eqn.spatial.a
+                    eqn.tmp.Ruk = derivative(eqn.tmp.uk)
+                    eqn.tmp.Rwk = derivative(eqn.tmp.wk)
+                    dPdxAct = real(eval_b(eqn.tmp.Ruk) - eval_a(eqn.tmp.Ruk)) / Ly
+                    dPdzAct = real(eval_b(eqn.tmp.Rwk) - eval_a(eqn.tmp.Rwk)) / Ly
+
+                    if length(eqn.baseflow.Ubase.data) != 0
+                        Ubasey = derivative(eqn.baseflow.Ubase)
+                        dPdxAct += flags.nu * (eval_b(Ubasey) - eval_a(Ubasey)) / Ly
+                    end
+                    if length(eqn.baseflow.Wbase.data) != 0
+                        Wbasey = derivative(eqn.baseflow.Wbase)
+                        dPdzAct += flags.nu * (eval_b(Wbasey) - eval_a(Wbasey)) / Ly
+                    end
+
+                    current_u = cmplx(outfields[1], mx, 1, mz, 1)
+                    current_w = cmplx(outfields[1], mx, 1, mz, 3)
+                    set_cmplx!(outfields[1], current_u - Complex(dPdxAct, 0.0), mx, 1, mz, 1)
+                    set_cmplx!(outfields[1], current_w - Complex(dPdzAct, 0.0), mx, 1, mz, 3)
+                end
+            end
+        end  # mz loop
+    end  # mx loop
+end
+
+#=
 function linear!(eqn::NSE, infields::Vector{<:FlowField}, outfields::Vector{<:FlowField}, flags::DNSFlags)
     @assert length(infields) == length(outfields) + 1 "Dimension mismatch. There should be no pressure field in outfields. Outfields should be create with create_RHS."
 
@@ -536,6 +638,7 @@ function linear!(eqn::NSE, infields::Vector{<:FlowField}, outfields::Vector{<:Fl
         end
     end
 end
+=#
 
 function solve!(eqn::NSE, outfields::Union{AbstractArray{FlowField},AbstractArray{FlowField{T}}}, rhs::AbstractArray{FlowField{T}}, s::Int, flags::DNSFlags) where {T<:Number}
     # Method takes a right hand side {u} and solves for output fields {u,press}
@@ -543,6 +646,11 @@ function solve!(eqn::NSE, outfields::Union{AbstractArray{FlowField},AbstractArra
 
     kxmax = kx_max(outfields[1])
     kzmax = kz_max(outfields[1])
+
+    # println("outfields[1] is:")
+    # display(outfields[1])
+    # println("rhs[1] is:")
+    # display(rhs[1])
 
     # Update each Fourier mode with solution of the implicit problem
     # Since we're not using MPI, we loop over all modes directly
@@ -554,14 +662,14 @@ function solve!(eqn::NSE, outfields::Union{AbstractArray{FlowField},AbstractArra
 
             # Skip last and aliased modes
             if (kx == kxmax || kz == kzmax) || (dealias_xz(flags) && is_aliased(outfields[1], kx, kz))
-                continue
+                break
             end
 
             # Construct ComplexChebyCoeff from RHS
             for ny = 1:eqn.spatial.Nyd
-                eqn.tmp.Ruk[ny] = rhs[1].spectral_data[mx, ny, mz, 1]
-                eqn.tmp.Rvk[ny] = rhs[1].spectral_data[mx, ny, mz, 2]
-                eqn.tmp.Rwk[ny] = rhs[1].spectral_data[mx, ny, mz, 3]
+                eqn.tmp.Ruk[ny] = cmplx(rhs[1], mx, ny, mz, 1)
+                eqn.tmp.Rvk[ny] = cmplx(rhs[1], mx, ny, mz, 2)
+                eqn.tmp.Rwk[ny] = cmplx(rhs[1], mx, ny, mz, 3)
             end
 
             # Solve the tau equations
@@ -618,10 +726,10 @@ function solve!(eqn::NSE, outfields::Union{AbstractArray{FlowField},AbstractArra
                 (outfields[1].domain.Nx % 2 == 0 && outfields[1].domain.Nz % 2 == 0 && kx == kxmax && kz == kzmax))
 
                 for ny = 1:eqn.spatial.Nyd
-                    set_cmplx!(outfields[1], eqn.tmp.uk[ny], mx, ny, mz, 1)
-                    set_cmplx!(outfields[1], eqn.tmp.vk[ny], mx, ny, mz, 2)
-                    set_cmplx!(outfields[1], eqn.tmp.wk[ny], mx, ny, mz, 3)
-                    set_cmplx!(outfields[2], eqn.tmp.Pk[ny], mx, ny, mz, 1)
+                    set_cmplx!(outfields[1], Complex(real(eqn.tmp.uk[ny]), 0.0), mx, ny, mz, 1)
+                    set_cmplx!(outfields[1], Complex(real(eqn.tmp.vk[ny]), 0.0), mx, ny, mz, 2)
+                    set_cmplx!(outfields[1], Complex(real(eqn.tmp.wk[ny]), 0.0), mx, ny, mz, 3)
+                    set_cmplx!(outfields[2], Complex(real(eqn.tmp.Pk[ny]), 0.0), mx, ny, mz, 1)
                 end
             else
                 # The normal case, for general kx,kz
