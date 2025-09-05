@@ -5,6 +5,7 @@ version = "1.0.0-DEV"
 
 [deps]
 AbstractFFTs = "621f4979-c628-5d54-868e-fcf4e3e8185c"
+CompatHelper = "aa819f21-2bde-4658-8897-bab36330d9b7"
 FFTW = "7a1cc6ca-52ef-59f5-83cd-3a7055c09341"
 JuliaFormatter = "98e50ef6-434e-11e9-1051-2b60c6c9e899"
 LanguageServer = "2b0e0bc5-e4fd-59b4-8912-456d1b03d8d7"
@@ -18,6 +19,7 @@ Revise = "295af30f-e4ad-537b-8983-00126c2a3abe"
 
 [compat]
 AbstractFFTs = "1.5.0"
+CompatHelper = "3.12.0"
 FFTW = "1.9.0"
 JuliaFormatter = "1.0.62"
 LanguageServer = "4.5.1"
