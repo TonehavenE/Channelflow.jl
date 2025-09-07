@@ -2,13 +2,15 @@
 Defines operations for reading and writing data about FlowFields. 
 =#
 
+export read_geom, read_data
+
 """
 	read_geom(io)
 
 Constructs a FlowFieldDomain from IO.
 """
 function read_geom(io::IOStream)::FlowFieldDomain
-	# Have to make this strings for ease of conversion
+    # Have to make this strings for ease of conversion
     value_map = Dict(
         "Nx" => nothing,
         "Ny" => nothing,
@@ -49,7 +51,7 @@ end
 Constructs a FlowFieldDomain from a file path as a string.
 """
 function read_geom(file_path::String)::FlowFieldDomain
-    open(file_name, "r") do io
+    open(file_path, "r") do io
         domain = read_geom(io)
         return domain
     end
@@ -63,7 +65,7 @@ Constructs a FlowField object from a IOStream and a given domain.
 function read_data(io::IOStream, domain::FlowFieldDomain)
     Nx, Ny, Nz = domain.Nx, domain.Ny, domain.Nz
     ff = FlowField(domain)
-	make_physical!(ff)
+    make_physical!(ff)
     line_count = 0
     for line in readlines(io)
 
@@ -75,7 +77,7 @@ function read_data(io::IOStream, domain::FlowFieldDomain)
 
         line_count += 1
     end
-	ff
+    ff
 end
 
 """
@@ -84,7 +86,7 @@ end
 Constructs a FlowField object from a file path and a given domain.
 """
 function read_data(file_path::String, domain::FlowFieldDomain)
-	open(file_path, "r") do io
-		return read_data(io, domain)
-	end
+    open(file_path, "r") do io
+        return read_data(io, domain)
+    end
 end
