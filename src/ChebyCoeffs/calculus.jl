@@ -2,13 +2,12 @@
 Defines calculus operations d/dx and ∫ for Chebyshev expansions.
 =#
 
-export derivative, derivative2, integrate
+export derivative, derivative!, derivative2, derivative2!, swap!, integrate, integrate!
 
 # ============================================================================
 # Differentiation and Integration - work for both real and complex
 # ============================================================================
 
-# TODO: Make these operations work in place instead
 """
 Compute derivative of Chebyshev expansion in place.
 
