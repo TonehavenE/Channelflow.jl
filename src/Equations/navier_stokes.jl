@@ -493,12 +493,17 @@ function linear!(eqn::NSE, infields::Vector{<:FlowField}, outfields::Vector{<:Fl
             end
 
             # Compute second derivatives
-            eqn.tmp.Ruk = derivative2(eqn.tmp.uk)
-            eqn.tmp.Rvk = derivative2(eqn.tmp.vk)
-            eqn.tmp.Rwk = derivative2(eqn.tmp.wk)
+            derivative2!(eqn.tmp.uk, eqn.tmp.Pyk, eqn.tmp.Ruk)
+            derivative2!(eqn.tmp.vk, eqn.tmp.Pyk, eqn.tmp.Rvk)
+            derivative2!(eqn.tmp.wk, eqn.tmp.Pyk, eqn.tmp.Rwk)
+
+            # eqn.tmp.Ruk = derivative2(eqn.tmp.uk)
+            # eqn.tmp.Rvk = derivative2(eqn.tmp.vk)
+            # eqn.tmp.Rwk = derivative2(eqn.tmp.wk)
 
             # Compute pressure gradient in y
-            eqn.tmp.Pyk = derivative(eqn.tmp.Pk)
+            # eqn.tmp.Pyk = derivative(eqn.tmp.Pk)
+            derivative!(eqn.tmp.Pk, eqn.tmp.Pyk)
 
             # Compute linear terms
             kappa2 = 4 * pi^2 * ((kx / Lx_)^2 + (kz / Lz_)^2)
@@ -536,8 +541,10 @@ function linear!(eqn::NSE, infields::Vector{<:FlowField}, outfields::Vector{<:Fl
                 else
                     # Bulk velocity constraint - compute actual pressure gradient
                     Ly = eqn.spatial.b - eqn.spatial.a
-                    eqn.tmp.Ruk = derivative(eqn.tmp.uk)
-                    eqn.tmp.Rwk = derivative(eqn.tmp.wk)
+                    # eqn.tmp.Ruk = derivative(eqn.tmp.uk)
+                    # eqn.tmp.Rwk = derivative(eqn.tmp.wk)
+                    derivative!(eqn.tmp.uk, eqn.tmp.Ruk)
+                    derivative!(eqn.tmp.wk, eqn.tmp.Rwk)
                     dPdxAct = real(eval_b(eqn.tmp.Ruk) - eval_a(eqn.tmp.Ruk)) / Ly
                     dPdzAct = real(eval_b(eqn.tmp.Rwk) - eval_a(eqn.tmp.Rwk)) / Ly
 

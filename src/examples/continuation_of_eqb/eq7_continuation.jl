@@ -53,15 +53,15 @@ function eq7_continuation()
 
         # Calculate and print the L2 Norm of the velocity field.
         # This represents the total kinetic energy of the perturbation.
-        # norm_u = L2Norm(u)
-        # @printf "%-10.4f %-20.12e\n" t norm_u
-        # # display(u)
-        #
-        # # If the norm becomes NaN or explodes, stop the simulation.
-        # if isnan(norm_u) || norm_u > 1e10
-        #     println("\nERROR: Simulation became unstable!")
-        #     break
-        # end
+        norm_u = L2Norm(u)
+        @printf "%-10.4f %-20.12e\n" t norm_u
+        # display(u)
+
+        # If the norm becomes NaN or explodes, stop the simulation.
+        if isnan(norm_u) || norm_u > 1e10
+            println("\nERROR: Simulation became unstable!")
+            break
+        end
 
         # Advance the simulation by one time step
         advance!(dns, fields, 1)

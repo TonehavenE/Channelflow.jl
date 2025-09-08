@@ -89,7 +89,7 @@ mutable struct TauSolver
         solve!(velocity_helmholtz, v_plus, dP_dy, 0.0, 0.0)
 
         solve!(pressure_helmholtz, P_minus, zero, 1.0, 0.0)
-        dP_dy = derivative(P_minus)
+        derivative!(P_minus, dP_dy)
         solve!(velocity_helmholtz, v_minus, dP_dy, 0.0, 0.0)
 
         dvplus_dy = derivative(v_plus)
@@ -227,19 +227,20 @@ function solve_P_and_v!(
     end
 
     # Tau correction code follows
-    vyy = derivative2(v)
+    derivative2!(v, tmp)
 
     # sigma1_Nb and sigma1_Nb1 (Canuto & Hussaini notation)
     N = tau.num_modes
     λ = tau.lambda
     ν = tau.nu
 
-    sigma1_N = λ * v[N] - ν * vyy[N] - Ry[N]
-    sigma1_N1 = λ * v[N-1] - ν * vyy[N-1] - Ry[N-1]
+    sigma1_N = λ * v[N] - ν * tmp[N] - Ry[N]
+    sigma1_N1 = λ * v[N-1] - ν * tmp[N-1] - Ry[N-1]
 
-    tmp2 = derivative(P)
-    sigma1_N += tmp2[N]
-    sigma1_N1 += tmp2[N-1]
+    derivative!(P, tmp)
+
+    sigma1_N += tmp[N]
+    sigma1_N1 += tmp[N-1]
 
     # sigma0_Nb and sigma0_Nb1 are precomputed in tau
     sigma_N = sigma1_N / (1.0 - tau.sigma0_N)
@@ -275,7 +276,7 @@ function solve!(tau::TauSolver, u::ChebyCoeff, v::ChebyCoeff, w::ChebyCoeff, P::
     solve_P_and_v!(tau, realview(P), realview(v), rr, realview(Ry))
 
     # Solve imaginary
-    rr = derivative(imagview(Ry))
+    derivative!(imagview(Ry), rr)
     for n = 1:N
         rr[n] += tau.two_pi_kxLx * real(Rx[n]) + tau.two_pi_kzLz * real(Rz[n])
     end
@@ -318,7 +319,7 @@ function solve!(tau::TauSolver, u::ChebyCoeff, v::ChebyCoeff, w::ChebyCoeff, P::
     solve_P_and_v!(tau, realview(P), realview(v), rr, realview(Ry))
 
     # Solve imaginary
-    rr = derivative(imagview(Ry))
+    derivative!(imagview(Ry), rr)
     for n = 1:N
         rr[n] += tau.two_pi_kxLx * real(Rx[n]) + tau.two_pi_kzLz * real(Rz[n])
     end
@@ -343,7 +344,6 @@ function solve!(tau::TauSolver, u::ChebyCoeff, v::ChebyCoeff, w::ChebyCoeff, P::
 end
 
 function tauNorm(u::ChebyCoeff{T}) where {T<:Number}
-    tmp = ChebyCoeff{T}(num_modes(u) - 2, u)
     return L2Norm(u)
 end
 

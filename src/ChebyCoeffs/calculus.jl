@@ -68,10 +68,16 @@ function derivative(u::ChebyCoeff{T}) where {T<:Number}
 end
 
 """Compute second derivative in place"""
+function derivative2!(u::ChebyCoeff{<:Number}, dudx::ChebyCoeff{<:Number}, d2udx2::ChebyCoeff{<:Number})
+    derivative!(u, dudx)
+    derivative!(dudx, d2udx2)
+    return d2udx2
+end
+
+"""Compute second derivative, storing result in second argument in place"""
 function derivative2!(u::ChebyCoeff{<:Number}, dudx2_result::ChebyCoeff{<:Number})
     dudx = ChebyCoeff{eltype(u.data)}(length(u.data), u.a, u.b, Spectral)
-    derivative!(u, dudx) 
-    derivative!(dudx, dudx2_result)
+    derivative2!(u, dudx, dudx2_result)
     return dudx2_result
 end
 

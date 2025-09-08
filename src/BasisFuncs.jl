@@ -406,7 +406,7 @@ function divergence!(f::BasisFunc, divf::BasisFunc)
     tmp *= Complex(0, 2pi * f.domain.kx / f.domain.Lx)
     divf[1] = tmp
 
-    tmp = derivative(f[2])
+    derivative!(f[2], tmp)
     divf[1] += tmp
 
     tmp = ChebyCoeff(f[2])
