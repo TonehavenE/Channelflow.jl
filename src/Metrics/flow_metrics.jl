@@ -93,24 +93,24 @@ Returns the L2 norm squared of a FlowField.
 \int ||f||^2 dx dy dz (/ (Lx * Lz)~\text{if normalize})
 ```
 """
-function L2Norm2(ff::FlowField, normalize::Bool=true)
+function L2Norm2(ff::FlowField{T}, normalize::Bool=true)::T where {T<:Number}
     @assert xz_state(ff) == Spectral "FlowField must be in Spectral xz state for spectral access"
     @assert y_state(ff) == Spectral "FlowField must be in Spectral y state for spectral access"
 
-    sum = 0.0
+    sum = zero(T)
 
-    kxmin = ff.padded ? -kx_max_dealiased(ff) : kx_min(ff)
-    kxmax = ff.padded ? kx_max_dealiased(ff) : kx_max(ff)
-    kzmin = 0
-    kzmax = ff.padded ? kz_max_dealiased(ff) : kz_max(ff)
+    kxmin::Int64 = ff.padded ? -kx_max_dealiased(ff) : kx_min(ff)
+    kxmax::Int64 = ff.padded ? kx_max_dealiased(ff) : kx_max(ff)
+    kzmin::Int64 = 0
+    kzmax::Int64 = ff.padded ? kz_max_dealiased(ff) : kz_max(ff)
 
     cz = 1
+    profile = ChebyCoeff{Complex{T}}(num_y_gridpoints(ff), domain_a(ff), domain_b(ff), Spectral)
     for kz = kzmin:kzmax
         mz = kz_to_mz(ff, kz)
         for kx = kxmin:kxmax
             mx = kx_to_mx(ff, kx)
             for i = 1:num_dimensions(ff)
-                profile = ChebyCoeff{Complex}(num_y_gridpoints(ff), domain_a(ff), domain_b(ff), Spectral)
                 for ny = 1:num_y_gridpoints(ff)
                     profile[ny] = cmplx(ff, mx, ny, mz, i)
                 end
