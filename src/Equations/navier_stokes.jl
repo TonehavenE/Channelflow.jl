@@ -204,7 +204,7 @@ function create_base_flow(flags::DNSFlags, My::Int, a::Real, b::Real)
     elseif flags.baseflow == LinearBase
         Ubase = ChebyCoeff(My, a, b, Spectral)
         Wbase = ChebyCoeff(My, a, b, Spectral)
-        Ubase[1] = 1
+        Ubase[2] = 1
     elseif flags.baseflow == ParabolicBase
         @assert My > 2 "My must be greater than 2 for parabolic base flow"
         Ubase = ChebyCoeff(My, a, b, Spectral)
