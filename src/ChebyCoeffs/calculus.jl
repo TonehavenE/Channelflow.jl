@@ -14,29 +14,28 @@ Compute derivative of Chebyshev expansion in place.
 See "docs/Derivatives.md".
 """
 function derivative!(u::ChebyCoeff{<:Number}, dudx_result::ChebyCoeff{<:Number})
-    @assert u.state == Spectral "Must be in Spectral (Chebyshev coefficient) state."
-    @assert dudx_result.state == Spectral "Must be in Spectral (Chebyshev coefficient) state."
+    @assert u.state == Spectral
+    @assert dudx_result.state == Spectral
     N = length(u.data)
-    @assert length(dudx_result.data) == N "Input and output must have same length"
+    @assert length(dudx_result.data) == N
 
-    # Nothing to do for constants
+    T = eltype(u.data)
+    zeroT = zero(T)
+
     if N <= 1
-        fill!(dudx_result.data, zero(eltype(u.data)))
+        fill!(dudx_result.data, zeroT)
         return dudx_result
     end
 
-    # Scale factor for converting derivative coefficients to the domain [a, b]
     scale = 4.0 / domain_length(u)
 
-    # Initialize top of recurrence
-    dudx_result.data[N] = zero(eltype(u.data)) # input is nth degree, output is n-1; highest mode always zero
-    if N >= 2
-        dudx_result.data[N-1] = scale * (N - 1) * u.data[N]
-    end
+    # highest modes
+    dudx_result.data[N] = zeroT
+    dudx_result.data[N-1] = scale * (N - 1) * u.data[N]
 
-    # backward recurrence: b_n = b_{n+2} + scale * n * a_{n + 1}
-    for n = N-2:-1:1
-        dudx_result.data[n] = dudx_result.data[n+2] + scale * n * u.data[n+1]
+    # backward recurrence
+    @inbounds @simd for n = N-2:-1:1
+        dudx_result.data[n] = dudx_result.data[n+2] + (n * scale) * u.data[n+1]
     end
 
     # first coefficient correction

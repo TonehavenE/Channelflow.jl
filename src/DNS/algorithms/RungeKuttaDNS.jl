@@ -25,9 +25,9 @@ function RungeKuttaDNS(fields::Vector{FlowField{T}}, equations::Equation, flags:
     if algorithm == CNRK2
         order = 2
         Nsubsteps = 3
-        A = [0.0, -5.0 / 9.0, -153.0 / 128.0]
-        B = [1.0 / 3.0, 15.0 / 16.0, 8.0 / 15.0]
-        C = [1.0 / 6.0, 5.0 / 24.0, 1.0 / 8.0]
+        A::Vector{Float64} = [0.0, -5.0 / 9.0, -153.0 / 128.0]
+        B::Vector{Float64} = [1.0 / 3.0, 15.0 / 16.0, 8.0 / 15.0]
+        C::Vector{Float64} = [1.0 / 6.0, 5.0 / 24.0, 1.0 / 8.0]
     else
         error("Unsupported Runge-Kutta algorithm: $algorithm")
     end
@@ -68,7 +68,11 @@ end
 
 function advance!(alg::RungeKuttaDNS, fields::Vector{FlowField{T}}, Nsteps::Int) where {T<:Number}
     rhs = create_RHS(alg.common.equations, fields)
-    lt = [FlowField(f) for f in rhs] # Linear terms
+    linear_terms = [FlowField(f) for f in rhs] # Linear terms
+    advance!(alg, fields, Nsteps, rhs, linear_terms)
+end
+
+function advance!(alg::RungeKuttaDNS, fields::Vector{FlowField{T}}, Nsteps::Int, rhs, lt) where {T<:Number}
     len = length(rhs)
 
     # Main time-stepping loop
@@ -95,35 +99,16 @@ function advance!(alg::RungeKuttaDNS, fields::Vector{FlowField{T}}, Nsteps::Int)
                 # Start with the linear term
                 copy!(rhs[l], lt[l])
 
-                # println("DEBUGGING COMBINE TERMS:")
-                # println("rhs[$l] is:")
-                # display(rhs[l])
-                # println("alg.common.lambda_t[$j] is:")
-                # display(alg.common.lambda_t[j])
-                # println("uj[$l] is:")
-                # display(uj[l])
-                # println("B_C is:")
-                # display(B_C)
-                # println("alg.Qj[$l] is:")
-                # display(alg.Qj[l])
-                #
                 add!(rhs[l], alg.common.lambda_t[j], uj[l], B_C, alg.Qj[l])
-
-                # println("\n\n\n=====================")
-                # println("after add!, rhs[$l] is:")
-                # display(rhs[l])
             end
 
             # Solve the implicit system: L(u_j) - lambda_t * u_j = RHS
 
             solve!(alg.common.equations, fields, rhs, j, alg.common.flags)
-        end # End of substep loop
+        end
 
         alg.common.t += alg.common.flags.dt
-
-        # Optional: Add verbosity/logging here as in the C++ code
-
-    end # End of main step loop
+    end
 
     return nothing
 end
