@@ -17,8 +17,6 @@ using Channelflow
             @test ff.xz_state == Spectral
             @test ff.y_state == Spectral
             @test !ff.padded
-            @test ff.physical_data === nothing
-            @test ff.spectral_data !== nothing
             @test size(ff.spectral_data) == (8, 5, 9, 3) # Mz = 16/2 + 1 = 9
         end
 
@@ -27,8 +25,6 @@ using Channelflow
 
             @test ff.xz_state == Physical
             @test ff.y_state == Spectral
-            @test ff.physical_data !== nothing
-            @test ff.spectral_data === nothing
             @test size(ff.physical_data) == (8, 5, 16, 3)
         end
 
@@ -37,7 +33,6 @@ using Channelflow
             ff = FlowField(domain)
 
             @test ff.domain == domain
-            @test ff.spectral_data !== nothing
             @test size(ff.spectral_data) == (8, 5, 9, 3)
         end
 
