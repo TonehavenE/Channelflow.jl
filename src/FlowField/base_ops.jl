@@ -35,9 +35,10 @@ end
 In-place scalar multiplication.
 """
 function scale!(ff::FlowField{T}, scalar::Number) where {T}
-    current_data = _current_data(ff)
-    if current_data !== nothing
-        current_data .*= scalar
+    if ff.xz_state == Physical
+        ff.physical_data .*= scalar
+    else
+        ff.spectral_data .*= scalar
     end
     return ff
 end

@@ -20,11 +20,11 @@ The transforms handle:
 """
 mutable struct FlowFieldTransforms{T<:Real}
     # FFTW plans for x,z transforms
-    xz_plan::Union{AbstractFFTs.Plan,Nothing,FFTW.r2rFFTWPlan}        # Real -> Complex (forward)
-    xz_inverse_plan::Union{AbstractFFTs.Plan,Nothing,FFTW.r2rFFTWPlan} # Complex -> Real (inverse)
+    xz_plan::FFTW.rFFTWPlan        # Real -> Complex (forward)
+    xz_inverse_plan::AbstractFFTs.ScaledPlan # Complex -> Real (inverse)
 
     # FFTW plan for y transforms
-    y_plan::Union{AbstractFFTs.Plan,Nothing,FFTW.r2rFFTWPlan}         # DCT-I for Chebyshev
+    y_plan::FFTW.r2rFFTWPlan         # DCT-I for Chebyshev
 
     # Scratch arrays
     y_scratch::Vector{T}  # 1D scratch space for y transforms
@@ -37,30 +37,29 @@ Create FFTW plans for a given domain.
 Plans are created immediately and stored for reuse.
 """
 function FlowFieldTransforms(domain::FlowFieldDomain{T}) where {T}
+    @assert domain.Nx > 0
+    @assert domain.Nz > 0
+    @assert domain.Ny >= 2
     # Initialize scratch space for y transforms
     y_scratch = zeros(T, domain.Ny)
 
-    xz_plan = nothing
-    xz_inverse_plan = nothing
-    y_plan = nothing
+    # xz_plan = nothing
+    # xz_inverse_plan = nothing
+    # y_plan = nothing
 
-    if domain.Nx > 0 && domain.Nz > 0
-        # Create sample arrays for FFTW planning
-        sample_physical = zeros(T, domain.Nx, domain.Ny, domain.Nz, domain.num_dimensions)
-        sample_spectral =
-            zeros(Complex{T}, domain.Nx, domain.My, domain.Mz, domain.num_dimensions)
+    # Create sample arrays for FFTW planning
+    sample_physical = zeros(T, domain.Nx, domain.Ny, domain.Nz, domain.num_dimensions)
+    sample_spectral =
+        zeros(Complex{T}, domain.Nx, domain.My, domain.Mz, domain.num_dimensions)
 
-        # Create xz transforms
-        # Transform over dimensions (1,3) = (x,z) for each (y,i)
-        xz_plan = plan_rfft(sample_physical, (3, 1); flags=FFTW.MEASURE)
-        xz_inverse_plan =
-            plan_irfft(sample_spectral, domain.Nz, (3, 1); flags=FFTW.MEASURE)
+    # Create xz transforms
+    # Transform over dimensions (1,3) = (x,z) for each (y,i)
+    xz_plan = plan_rfft(sample_physical, (3, 1); flags=FFTW.MEASURE)
+    xz_inverse_plan =
+        plan_irfft(sample_spectral, domain.Nz, (3, 1); flags=FFTW.MEASURE)
 
-        # Y transform: DCT-I (REDFT00) for Chebyshev polynomials
-        if domain.Ny >= 2
-            y_plan = FFTW.plan_r2r!(y_scratch, FFTW.REDFT00; flags=FFTW.MEASURE)
-        end
-    end
+    # Y transform: DCT-I (REDFT00) for Chebyshev polynomials
+    y_plan = FFTW.plan_r2r!(y_scratch, FFTW.REDFT00; flags=FFTW.MEASURE)
 
     return FlowFieldTransforms{T}(xz_plan, xz_inverse_plan, y_plan, y_scratch)
 end
@@ -113,7 +112,6 @@ function make_physical_xz!(
     domain::FlowFieldDomain{T},
     transforms::FlowFieldTransforms{T},
 ) where {T}
-
     if transforms.xz_inverse_plan === nothing
         error("XZ inverse transform plan not initialized")
     end
@@ -301,6 +299,7 @@ function make_physical_y!(
     if domain.Ny < 2
         return data
     end
+
 
     if transforms.y_plan === nothing
         error("Y transform plan not initialized")

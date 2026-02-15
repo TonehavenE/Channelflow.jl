@@ -8,7 +8,7 @@ import ..TauSolvers: solve!
 
 export NSE, nonlinear!
 
-function profile(ff::FlowField, mx::Int, mz::Int, i::Int)
+function profile(ff::FlowField{T}, mx::Int, mz::Int, i::Int) where {T<:Number}
     ret = ChebyCoeff{ComplexF64}(ff.domain.Ny, ff.domain.a, ff.domain.b, y_state(ff))
     if xz_state(ff) == Spectral
         for ny = 1:ff.domain.Ny
@@ -23,7 +23,7 @@ function profile(ff::FlowField, mx::Int, mz::Int, i::Int)
     return ret
 end
 
-function profile(ff::FlowField, mx::Int, mz::Int)
+function profile(ff::FlowField{T}, mx::Int, mz::Int) where {T<:Number}
     ret = BasisFunc(num_dimensions(ff), ff.domain.Ny, mx_to_kx(ff, mx), mz_to_kz(ff, mz), ff.domain.Lx, ff.domain.Lz, ff.domain.a, ff.domain.b, y_state(ff))
     for i = 1:num_dimensions(ff), ny = 1:ff.domain.Ny
         ret[i, ny] = cmplx(ff, mx, ny, mz, i)
@@ -31,7 +31,7 @@ function profile(ff::FlowField, mx::Int, mz::Int)
     return ret
 end
 
-function get_Ubulk(ff::FlowField)
+function get_Ubulk(ff::FlowField{T}) where {T<:Number}
     ubulk = mean_value(profile(ff, 1, 1, 1))
     if abs(ubulk) < 1e-15
         ubulk = 0.0
@@ -39,7 +39,7 @@ function get_Ubulk(ff::FlowField)
     return ubulk
 end
 
-function get_Wbulk(ff::FlowField)
+function get_Wbulk(ff::FlowField{T}) where {T<:Number}
     wbulk = mean_value(profile(ff, 1, 1, 3))
     if abs(wbulk) < 1e-15
         wbulk = 0.0
@@ -47,38 +47,38 @@ function get_Wbulk(ff::FlowField)
     return wbulk
 end
 
-function dudy_a(ff::FlowField)
+function dudy_a(ff::FlowField{T}) where {T<:Number}
     @assert y_state(ff) == Spectral
     prof = profile(ff, 1, 1)
     dudy = derivative(realview(get_u(prof)))
     return eval_a(dudy)
 end
 
-function dudy_b(ff::FlowField)
+function dudy_b(ff::FlowField{T}) where {T<:Number}
     @assert y_state(ff) == Spectral
     prof = profile(ff, 1, 1)
     dudy = derivative(realview(get_u(prof)))
     return eval_b(dudy)
 end
 
-function dwdy_a(ff::FlowField)
+function dwdy_a(ff::FlowField{T}) where {T<:Number}
     @assert y_state(ff) == Spectral
     prof = profile(ff, 1, 1)
     dwdy = derivative(realview(get_w(prof)))
     return eval_a(dwdy)
 end
-function dwdy_b(ff::FlowField)
+function dwdy_b(ff::FlowField{T}) where {T<:Number}
     @assert y_state(ff) == Spectral
     prof = profile(ff, 1, 1)
     dwdy = derivative(realview(get_w(prof)))
     return eval_b(dwdy)
 end
 
-function get_dPdx(ff::FlowField, nu::Real)
+function get_dPdx(ff::FlowField{T}, nu::Real) where {T<:Number}
     nu * (dudy_b(ff) - dudy_a(ff)) / Ly(ff)
 end
 
-function get_dPdz(ff::FlowField, nu::Real)
+function get_dPdz(ff::FlowField{T}, nu::Real) where {T<:Number}
     nu * (dwdy_b(ff) - dwdy_a(ff)) / Ly(ff)
 end
 
@@ -123,7 +123,7 @@ end
 end
 
 @kwdef mutable struct TransientFields
-    ff::FlowField
+    ff::FlowField{<:Number}
     uk::ChebyCoeff{ComplexF64}
     vk::ChebyCoeff{ComplexF64}
     wk::ChebyCoeff{ComplexF64}
@@ -365,7 +365,7 @@ function create_RHS(eqn::NSE, fields::Vector{FlowField{T}}) where {T<:Number}
     return [FlowField(fields[1])]
 end
 
-function navierstokes_nonlinear!(u::FlowField, Ubase::ChebyCoeff, Wbase::ChebyCoeff, f::FlowField, tmp::FlowField, flags::DNSFlags)
+function navierstokes_nonlinear!(u::FlowField{Q}, Ubase::ChebyCoeff{R}, Wbase::ChebyCoeff{S}, f::FlowField{T}, tmp::FlowField{U}, flags::DNSFlags) where {Q,R,S,T,U<:Number}
     finalstate = Spectral
     @assert xz_state(u) == Spectral "xz_state(u) should be Spectral in navierstokes_nonlinear"
     @assert y_state(u) == Spectral "y_state(u) should be Spectral in navierstokes_nonlinear"
@@ -422,14 +422,15 @@ end
 
 Calculates the nonlinear terms of the Navier Stokes equations.
 """
-function nonlinear!(eqn::NSE, infields::Vector{<:FlowField}, outfields::Vector{<:FlowField}, flags::DNSFlags)
+function nonlinear!(eqn::NSE, infields::Vector{<:FlowField{<:Number}}, outfields::Vector{<:FlowField{<:Number}}, flags::DNSFlags)
     navierstokes_nonlinear!(infields[1], eqn.baseflow.Ubase, eqn.baseflow.Wbase, outfields[1], eqn.tmp.ff, flags)
     if dealias_xz(flags)
         zero_padded_modes!(outfields[1])
     end
+    return
 end
 
-function rotational_nonlinear!(u::FlowField, f::FlowField, tmp::FlowField, finalstate::FieldState)
+function rotational_nonlinear!(u::FlowField{Q}, f::FlowField{R}, tmp::FlowField{S}, finalstate::FieldState) where {Q,R,S<:Number}
     @assert num_dimensions(u) == 3 "FlowField must have 3 dimensions for rotational nonlinearity"
     u_xz_state = xz_state(u)
     u_y_state = y_state(u)

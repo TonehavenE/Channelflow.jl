@@ -210,16 +210,16 @@ using Channelflow
 
         @testset "Single Dimension Fields" begin
             # Test 1D-like fields
-            ff_1d_x = FlowField(16, 1, 1, 1, 2π, 1π, 0.0, 1.0)
+            ff_1d_x = FlowField(16, 2, 1, 1, 2π, 1π, 0.0, 1.0)
             ff_1d_y = FlowField(1, 9, 1, 1, 2π, 1π, -1.0, 1.0)
-            ff_1d_z = FlowField(1, 1, 16, 1, 2π, 1π, 0.0, 1.0)
+            ff_1d_z = FlowField(1, 2, 16, 1, 2π, 1π, 0.0, 1.0)
             make_physical!(ff_1d_x)
             make_physical!(ff_1d_y)
             make_physical!(ff_1d_z)
 
-            @test size(ff_1d_x.physical_data) == (16, 1, 1, 1)
+            @test size(ff_1d_x.physical_data) == (16, 2, 1, 1)
             @test size(ff_1d_y.physical_data) == (1, 9, 1, 1)
-            @test size(ff_1d_z.physical_data) == (1, 1, 16, 1)
+            @test size(ff_1d_z.physical_data) == (1, 2, 16, 1)
 
             # Basic operations should work
             ff_1d_x[8, 1, 1, 1] = 5.0

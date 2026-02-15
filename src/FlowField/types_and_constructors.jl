@@ -151,7 +151,7 @@ end
 """
 Get reference to current active data array.
 """
-function _current_data(ff::FlowField)
+function _current_data(ff::FlowField{T}) where {T}
     if ff.xz_state == Physical
         return ff.physical_data
     else
