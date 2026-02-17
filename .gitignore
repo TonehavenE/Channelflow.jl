@@ -1,3 +1,18 @@
 /Manifest*.toml
 .vscode/settings.json
 /statprof/*
+
+# Generated benchmark/findsoln artifacts at repo root
+/continueflags.txt
+/dnsflags.txt
+/findsoln.args
+/newtonflags.txt
+/optphaseshift.args
+/processinfo
+/projectfield.args
+/turbstats.asc
+
+# Generated CMake build artifacts in imported C++ refs
+/nsolver_ref/cfbasics/CMakeFiles/
+/nsolver_ref/channelflow/CMakeFiles/
+/nsolver_ref/channelflow/libchflow.so
