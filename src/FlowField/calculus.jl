@@ -9,7 +9,10 @@ function curl!(f::FlowField, curlf::FlowField)
     if !geom_congruent(f, curlf) || num_dimensions(curlf) != 3
         resize!(curlf, f.domain.Nx, f.domain.Ny, f.domain.Nz, 3, f.domain.Lx, f.domain.Lz, f.domain.a, f.domain.b)
     end
-    make_state!(curlf, Spectral, Spectral)
+    # curlf is fully overwritten below in spectral space, so avoid an unnecessary
+    # physical->spectral transform when curlf currently holds physical data.
+    curlf.xz_state = Spectral
+    curlf.y_state = Spectral
 
     Mx = f.domain.Mx
     My = f.domain.My
@@ -23,8 +26,11 @@ function curl!(f::FlowField, curlf::FlowField)
     # curl_y = u_z - w_x  
     # curl_z = v_x - u_y
 
+    f_spec = f.spectral_data
+    curl_spec = curlf.spectral_data
+
     # Assign d/dx and d/dz terms to curl
-    for my = 1:My, mx = 1:Mx
+    @inbounds for my = 1:My, mx = 1:Mx
         kx = mx_to_kx(f, mx)
         cx = Complex(0.0, 2.0 * pi * kx / Lx_ * zero_last_mode(kx, kxmax, 1))
 
@@ -32,38 +38,40 @@ function curl!(f::FlowField, curlf::FlowField)
             kz = mz_to_kz(f, mz)
             cz = Complex(0.0, 2.0 * pi * kz / Lz_ * zero_last_mode(kz, kzmax, 1))
 
-            u = cmplx(f, mx, my, mz, 1)  # f[0] in C++ = f[1] in Julia (u component)
-            v = cmplx(f, mx, my, mz, 2)  # f[1] in C++ = f[2] in Julia (v component) 
-            w = cmplx(f, mx, my, mz, 3)  # f[2] in C++ = f[3] in Julia (w component)
+            u = f_spec[mx, my, mz, 1]  # f[0] in C++ = f[1] in Julia (u component)
+            v = f_spec[mx, my, mz, 2]  # f[1] in C++ = f[2] in Julia (v component)
+            w = f_spec[mx, my, mz, 3]  # f[2] in C++ = f[3] in Julia (w component)
 
-            set_cmplx!(curlf, -cz * v, mx, my, mz, 1)         # curlf[0] = -cz*v  → curlf[1]
-            set_cmplx!(curlf, cz * u - cx * w, mx, my, mz, 2) # curlf[1] = cz*u - cx*w → curlf[2]
-            set_cmplx!(curlf, cx * v, mx, my, mz, 3)          # curlf[2] = cx*v → curlf[3]
+            curl_spec[mx, my, mz, 1] = -cz * v         # curlf[0] = -cz*v  → curlf[1]
+            curl_spec[mx, my, mz, 2] = cz * u - cx * w # curlf[1] = cz*u - cx*w → curlf[2]
+            curl_spec[mx, my, mz, 3] = cx * v          # curlf[2] = cx*v → curlf[3]
         end
     end
 
     # Assign df_i/dy using ChebyCoeff derivatives
-    # We need ComplexChebyCoeff objects for u and w components
+    # Reuse ComplexChebyCoeff objects for u, w and derivatives.
     w_coeff = ChebyCoeff{ComplexF64}(My, domain_a(f), domain_b(f), Spectral)
     u_coeff = ChebyCoeff{ComplexF64}(My, domain_a(f), domain_b(f), Spectral)
+    wy_coeff = ChebyCoeff{ComplexF64}(My, domain_a(f), domain_b(f), Spectral)
+    uy_coeff = ChebyCoeff{ComplexF64}(My, domain_a(f), domain_b(f), Spectral)
 
-    for mx = 1:Mx, mz = 1:Mz
+    @inbounds for mx = 1:Mx, mz = 1:Mz
         # Extract u and w components for this (mx, mz) pair
         for my = 1:My
-            u_coeff[my] = cmplx(f, mx, my, mz, 1)  # u component
-            w_coeff[my] = cmplx(f, mx, my, mz, 3)  # w component  
+            u_coeff.data[my] = f_spec[mx, my, mz, 1]  # u component
+            w_coeff.data[my] = f_spec[mx, my, mz, 3]  # w component
         end
 
         # Compute derivatives
-        uy_coeff = derivative(u_coeff)
-        wy_coeff = derivative(w_coeff)
+        derivative!(u_coeff, uy_coeff)
+        derivative!(w_coeff, wy_coeff)
 
         # Add y-derivative terms to curl
         for my = 1:My
             # curlf[0] += wy → curlf[1] += wy (curl_x = w_y - v_z)
-            set_cmplx!(curlf, cmplx(curlf, mx, my, mz, 1) + wy_coeff[my], mx, my, mz, 1)
+            curl_spec[mx, my, mz, 1] += wy_coeff.data[my]
             # curlf[2] -= uy → curlf[3] -= uy (curl_z = v_x - u_y) 
-            set_cmplx!(curlf, cmplx(curlf, mx, my, mz, 3) - uy_coeff[my], mx, my, mz, 3)
+            curl_spec[mx, my, mz, 3] -= uy_coeff.data[my]
         end
     end
 
