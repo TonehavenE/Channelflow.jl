@@ -1,0 +1,9 @@
+Command:  /home/ebenq/.julia/artifacts/6c1f2435997ed534492ee48fcb3cbe0e484642f9/bin/findsoln -R 300.0 -eqb -symms symm_E.asc -od /tmp/cpp_findsoln_bench_n5 -T 10.0 -Nn 5 u_guess.nc 
+PWD:      /home/ebenq/.julia/dev/Channelflow/test/data
+Host:     ebenq-ideapad, PID: 3453872
+Time:     2026-02-17 12:14:22
+Version:  2.0.2
+Git rev:  91ba77f93bba73af4ef25e3d3cecf35521badbfd
+Compiler: GNU 14.2.0
+
+
