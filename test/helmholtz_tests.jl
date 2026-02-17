@@ -45,7 +45,7 @@ end
                 make_spectral!(rhs)
 
                 prob = HelmholtzProblem(N, h.a, h.b, lambda, nu)
-                u = solve(prob, rhs, h.ua, h.ub)
+                u = Channelflow.HelmholtzSolver.solve(prob, rhs, h.ua, h.ub)
                 make_physical!(u)
 
                 max_error = maximum(abs.(u.data - u_exact))
