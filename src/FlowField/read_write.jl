@@ -63,21 +63,73 @@ end
 Constructs a FlowField object from a IOStream and a given domain.
 """
 function read_data(io::IOStream, domain::FlowFieldDomain)
+    # Detect file format by first non-empty line:
+    # - legacy Julia format: one physical scalar per line
+    # - ChannelFlow ASCII format: header lines starting with '%' and spectral Re/Im pairs
+    first_payload = nothing
+    for line in eachline(io)
+        t = strip(line)
+        isempty(t) && continue
+        first_payload = t
+        break
+    end
+    seekstart(io)
+
+    if isnothing(first_payload)
+        ff = FlowField(domain)
+        set_to_zero!(ff)
+        return ff
+    elseif startswith(first_payload, "%")
+        return _read_channelflow_ascii(io, domain)
+    else
+        return _read_legacy_physical_ascii(io, domain)
+    end
+end
+
+function _read_legacy_physical_ascii(io::IOStream, domain::FlowFieldDomain)
     Nx, Ny, Nz = domain.Nx, domain.Ny, domain.Nz
     ff = FlowField(domain)
     make_physical!(ff)
     line_count = 0
-    for line in readlines(io)
+    for line in eachline(io)
+        t = strip(line)
+        isempty(t) && continue
 
-        i = line_count % 3
-        nz = (line_count ÷ 3) % Nz
-        ny = (line_count ÷ (3 * Nz)) % Ny
-        nx = (line_count ÷ (3 * Nz * Ny)) % Nx
-        ff[nx+1, ny+1, nz+1, i+1] = parse(Float64, line)
+        i = line_count % domain.num_dimensions
+        nz = (line_count ÷ domain.num_dimensions) % Nz
+        ny = (line_count ÷ (domain.num_dimensions * Nz)) % Ny
+        nx = (line_count ÷ (domain.num_dimensions * Nz * Ny)) % Nx
+        ff[nx+1, ny+1, nz+1, i+1] = parse(Float64, t)
 
         line_count += 1
     end
-    ff
+    return ff
+end
+
+function _read_channelflow_ascii(io::IOStream, domain::FlowFieldDomain)
+    ff = FlowField(domain; xz_state=Spectral, y_state=Spectral)
+    set_to_zero!(ff)
+
+    ncoeff = 0
+    nmodes = domain.Mz * domain.Mx * domain.My * domain.num_dimensions
+
+    for line in eachline(io)
+        t = strip(line)
+        (isempty(t) || startswith(t, "%")) && continue
+        vals = split(t)
+        length(vals) < 2 && continue
+
+        mz = ncoeff % domain.Mz
+        mx = (ncoeff ÷ domain.Mz) % domain.Mx
+        ny = (ncoeff ÷ (domain.Mz * domain.Mx)) % domain.My
+        i = (ncoeff ÷ (domain.Mz * domain.Mx * domain.My)) % domain.num_dimensions
+
+        ff.spectral_data[mx+1, ny+1, mz+1, i+1] = Complex(parse(Float64, vals[1]), parse(Float64, vals[2]))
+        ncoeff += 1
+    end
+
+    @assert ncoeff == nmodes "ChannelFlow ASCII size mismatch: read $ncoeff coefficients, expected $nmodes"
+    return ff
 end
 
 """
