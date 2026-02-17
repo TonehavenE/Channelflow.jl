@@ -210,41 +210,35 @@ function UL_solve_strided!(
     stride::Int,
 ) where {T<:Number}
     @assert A.is_decomposed "Matrix must be UL-decomposed first"
-    @assert offset in [0, 1] "offset must be 0 or 1"
-    @assert stride in [1, 2] "stride must be 1 or 2"
-
-    # Define index mapping function based on offset and stride
-    idx = if offset == 0 && stride == 1
-        i -> i
-    elseif offset == 1 && stride == 1
-        i -> offset + 1 + i - 1
-    elseif offset == 0 && stride == 2
-        i -> stride * i - 1
-    elseif offset == 1 && stride == 2
-        i -> offset + 1 + stride * (i - 1)
-    else
-        error("Invalid offset/stride combination")
-    end
+    @assert (offset == 0 || offset == 1) "offset must be 0 or 1"
+    @assert (stride == 1 || stride == 2) "stride must be 1 or 2"
+    base = offset + 1
+    M = A.num_rows
+    d0 = A.d_offset
+    data = A.data
+    inv_diag = A.inv_diag
+    nd = M - 1
 
     # Solve Uy=b by backsubstitution
-    for i = (A.num_rows-1):-1:2
-        b[idx(i)] -= upper_diag(A, i) * b[idx(i + 1)]
+    i = M - 1
+    @inbounds while i >= 2
+        ii = base + (i - 1) * stride
+        b[ii] -= data[d0 + 3 * (i - 1) - 1] * b[ii + stride]
+        i -= 1
     end
 
     # Handle first row
-    for j = 2:A.num_rows
-        first_row_idx = if offset == 1 && stride == 1
-            idx(1) + j - 1  # Special case for offset=1, stride=1
-        else
-            idx(j)
-        end
-        b[idx(1)] -= first_row(A, j) * b[first_row_idx]
+    i1 = base
+    @inbounds for j = 2:M
+        jj = base + (j - 1) * stride
+        b[i1] -= data[nd - j + 2] * b[jj]
     end
 
     # Solve Lx=y by forward substitution
-    b[idx(1)] /= main_diag(A, 1)
-    for i = 2:A.num_rows
-        b[idx(i)] = (b[idx(i)] - lower_diag(A, i) * b[idx(i - 1)]) * A.inv_diag[i]
+    @inbounds b[i1] /= data[d0]
+    @inbounds for i = 2:M
+        ii = base + (i - 1) * stride
+        b[ii] = (b[ii] - data[d0 + 3 * (i - 1) + 1] * b[ii - stride]) * inv_diag[i]
     end
 
     return b
@@ -276,29 +270,37 @@ function multiply_strided!(
     offset::Int,
     stride::Int,
 ) where {T<:Number}
-    @assert offset in [0, 1] "offset must be 0 or 1"
-    @assert stride in [1, 2] "stride must be 1 or 2"
-
-    # Create a view into the vectors with the appropriate stride pattern
-    x_view = @view x[offset+1:stride:offset+1+stride*(A.num_rows-1)]
-    b_view = @view b[offset+1:stride:offset+1+stride*(A.num_rows-1)]
+    @assert (offset == 0 || offset == 1) "offset must be 0 or 1"
+    @assert (stride == 1 || stride == 2) "stride must be 1 or 2"
+    base = offset + 1
+    M = A.num_rows
+    d0 = A.d_offset
+    data = A.data
+    nd = M - 1
 
     # Row 1 - full band multiplication
-    b_view[1] = sum(first_row(A, j) * x_view[j] for j = 1:A.num_rows)
+    i1 = base
+    acc = zero(T)
+    @inbounds for j = 1:M
+        jj = base + (j - 1) * stride
+        acc += data[nd - j + 2] * x[jj]
+    end
+    @inbounds b[i1] = acc
 
     # Rows 2 to num_rows-1 - tridiagonal structure
-    for i = 2:(A.num_rows-1)
-        b_view[i] = (
-            lower_diag(A, i) * x_view[i-1] +
-            main_diag(A, i) * x_view[i] +
-            upper_diag(A, i) * x_view[i+1]
+    @inbounds for i = 2:(M - 1)
+        ii = base + (i - 1) * stride
+        b[ii] = (
+            data[d0 + 3 * (i - 1) + 1] * x[ii - stride] +
+            data[d0 + 3 * (i - 1)] * x[ii] +
+            data[d0 + 3 * (i - 1) - 1] * x[ii + stride]
         )
     end
 
     # Final row - only lower diagonal and main diagonal
-    if A.num_rows > 1
-        i = A.num_rows
-        b_view[i] = (lower_diag(A, i) * x_view[i-1] + main_diag(A, i) * x_view[i])
+    if M > 1
+        ii = base + (M - 1) * stride
+        @inbounds b[ii] = data[d0 + 3 * (M - 1) + 1] * x[ii - stride] + data[d0 + 3 * (M - 1)] * x[ii]
     end
 
     return b

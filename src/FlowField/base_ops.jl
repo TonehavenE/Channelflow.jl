@@ -156,7 +156,7 @@ function add!(ff::FlowField{T}, a::Number, ff1::FlowField{T}) where {T}
     data1 = _current_data(ff1)
 
     if data !== nothing && data1 !== nothing
-        data .+= a .* data1
+        @. data = data + a * data1
     end
 
     return ff
@@ -188,13 +188,9 @@ function add!(
     data2 = _current_data(ff2)
 
     if data !== nothing && data1 !== nothing && data2 !== nothing
-        if ff.xz_state == Physical
-            ff.physical_data .+= a .* data1 .+ b .* data2
-        else
-            ff.spectral_data .+= a .* data1 .+ b .* data2
-        end
-
+        @. data = data + a * data1 + b * data2
     end
+    return ff
 end
 
 function Base.display(ff::FlowField)

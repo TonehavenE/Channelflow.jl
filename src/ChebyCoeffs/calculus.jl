@@ -13,13 +13,12 @@ Compute derivative of Chebyshev expansion in place.
 
 See "docs/Derivatives.md".
 """
-function derivative!(u::ChebyCoeff{<:Number}, dudx_result::ChebyCoeff{<:Number})
+function derivative!(u::ChebyCoeff{T,AU}, dudx_result::ChebyCoeff{T,AV}) where {T<:Number,AU<:AbstractArray{T},AV<:AbstractArray{T}}
     @assert u.state == Spectral
     @assert dudx_result.state == Spectral
     N = length(u.data)
     @assert length(dudx_result.data) == N
 
-    T = eltype(u.data)
     zeroT = zero(T)
 
     if N <= 1
@@ -67,14 +66,14 @@ function derivative(u::ChebyCoeff{T}) where {T<:Number}
 end
 
 """Compute second derivative in place"""
-function derivative2!(u::ChebyCoeff{<:Number}, dudx::ChebyCoeff{<:Number}, d2udx2::ChebyCoeff{<:Number})
+function derivative2!(u::ChebyCoeff{T,AU}, dudx::ChebyCoeff{T,AV}, d2udx2::ChebyCoeff{T,AW}) where {T<:Number,AU<:AbstractArray{T},AV<:AbstractArray{T},AW<:AbstractArray{T}}
     derivative!(u, dudx)
     derivative!(dudx, d2udx2)
     return d2udx2
 end
 
 """Compute second derivative, storing result in second argument in place"""
-function derivative2!(u::ChebyCoeff{<:Number}, dudx2_result::ChebyCoeff{<:Number})
+function derivative2!(u::ChebyCoeff{T,AU}, dudx2_result::ChebyCoeff{T,AV}) where {T<:Number,AU<:AbstractArray{T},AV<:AbstractArray{T}}
     dudx = ChebyCoeff{eltype(u.data)}(length(u.data), u.a, u.b, Spectral)
     derivative2!(u, dudx, dudx2_result)
     return dudx2_result
@@ -86,7 +85,7 @@ function derivative2(u::ChebyCoeff{T}) where {T<:Number}
 end
 
 
-function derivative!(u::ChebyCoeff{<:Number}, du::ChebyCoeff{<:Number}, n::Int)
+function derivative!(u::ChebyCoeff{T,AU}, du::ChebyCoeff{T,AV}, n::Int) where {T<:Number,AU<:AbstractArray{T},AV<:AbstractArray{T}}
     @assert n >= 0 "Derivative order must be non-negative"
     du = u
     temp = ChebyCoeff{T}(length(u.data), u.a, u.b, Spectral)
@@ -105,12 +104,12 @@ function derivative(u::ChebyCoeff{T}, n::Int) where {T<:Number}
 end
 
 """Integrate Chebyshev expansion, with the result being modified in place."""
-function integrate!(dudy::ChebyCoeff{<:Number}, result::ChebyCoeff{<:Number})
+function integrate!(dudy::ChebyCoeff{T,AU}, result::ChebyCoeff{T,AV}) where {T<:Number,AU<:AbstractArray{T},AV<:AbstractArray{T}}
     @assert dudy.state == Spectral "Must be in Spectral state"
     N = length(dudy.data)
 
     if N == 0
-        fill!(result.data, zero(eltype(u.data))),
+        fill!(result.data, zero(T)),
         return nothing
     elseif N == 1
         result.data[1] = zero(T)
