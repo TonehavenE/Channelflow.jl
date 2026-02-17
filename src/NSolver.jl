@@ -1,7 +1,6 @@
 module NSolver
 
 using LinearAlgebra
-using Random
 
 export AbstractDSI, FunctionDSI, eval_dsi, jacobian_action,
        ParamDSI, update_parameter!, parameter,
@@ -79,11 +78,12 @@ end
 
 function GMRES(b::AbstractVector{T}, niterations::Integer, min_condition::Real = 1e-13) where {T<:Real}
     m = length(b)
-    qn = collect(b ./ norm(b))
+    bnorm = norm(b)
+    qn = bnorm == 0 ? zeros(T, m) : collect(b ./ bnorm)
     q = zeros(T, m, 1)
     q[:, 1] .= qn
     return GMRES{T}(m, Int(niterations), 0, T(min_condition), zeros(T, niterations + 1, niterations), q, qn,
-                    zeros(T, m), norm(b), one(T))
+                    zeros(T, m), bnorm, bnorm == 0 ? zero(T) : one(T))
 end
 
 function test_vector(g::GMRES)
@@ -99,30 +99,25 @@ function iterate!(g::GMRES{T}, aq::AbstractVector{T}) where {T}
         v .-= g.h[j, g.n + 1] .* qj
     end
     vnorm = norm(v)
-    retries = 0
-    while abs(vnorm) < g.condition && retries < 10
-        retries += 1
-        randn!(v)
-        for j in 1:(g.n + 1)
-            qj = view(g.q, :, j)
-            g.h[j, g.n + 1] = dot(qj, v)
-            v .-= g.h[j, g.n + 1] .* qj
+    breakdown = abs(vnorm) < g.condition
+    if breakdown
+        g.h[g.n + 2, g.n + 1] = zero(T)
+    else
+        g.h[g.n + 2, g.n + 1] = vnorm
+        v ./= vnorm
+        if size(g.q, 2) <= g.n + 1
+            newsize = min(size(g.q, 2) + 100, g.niter + 2)
+            resize_q = zeros(T, g.m, newsize)
+            resize_q[:, 1:size(g.q, 2)] .= g.q
+            g.q = resize_q
         end
-        vnorm = norm(v)
+        g.q[:, g.n + 2] .= v
+        g.qn .= v
     end
-    g.h[g.n + 2, g.n + 1] = vnorm
-    v ./= vnorm
-    if size(g.q, 2) <= g.n + 1
-        newsize = min(size(g.q, 2) + 100, g.niter + 2)
-        resize_q = zeros(T, g.m, newsize)
-        resize_q[:, 1:size(g.q, 2)] .= g.q
-        g.q = resize_q
-    end
-    g.q[:, g.n + 2] .= v
-    g.qn .= v
 
-    hn = @view g.h[1:(g.n + 2), 1:(g.n + 1)]
-    bk = zeros(T, g.n + 2)
+    hn_rows = breakdown ? (g.n + 1) : (g.n + 2)
+    hn = @view g.h[1:hn_rows, 1:(g.n + 1)]
+    bk = zeros(T, hn_rows)
     bk[1] = g.bnorm
     y = hn \ bk
     g.residual_value = norm(hn * y - bk) / norm(bk)
@@ -245,11 +240,18 @@ Base.@kwdef struct NewtonSearchFlags
     centered::Bool = false
     n_newton::Int = 20
     n_solver::Int = 200
+    n_solver_max::Int = 500
+    n_hook::Int = 20
     delta::Float64 = 1e-2
     delta_min::Float64 = 1e-12
     delta_max::Float64 = 1e-1
+    delta_fuzz::Float64 = 1e-6
     improv_req::Float64 = 1e-3
+    improve_ok::Float64 = 1e-1
+    improve_good::Float64 = 7.5e-1
     lambda_min::Float64 = 0.2
+    lambda_max::Float64 = 1.5
+    g_ratio::Float64 = 10.0
 end
 
 struct NewtonAlgorithm
@@ -272,8 +274,11 @@ struct ContinuationPoint{T,V}
     residual::Float64
 end
 
-function _linear_step(dsi::AbstractDSI, x::AbstractVector, gx::AbstractVector, flags::NewtonSearchFlags)
+function _linear_step(dsi::AbstractDSI, x::AbstractVector, gx::AbstractVector, flags::NewtonSearchFlags; nsolver::Int = flags.n_solver)
     n = length(x)
+    if norm(gx) == 0
+        return zeros(eltype(x), n), 0.0
+    end
     if flags.solver == :direct
         j = zeros(eltype(x), n, n)
         for i in 1:n
@@ -283,54 +288,132 @@ function _linear_step(dsi::AbstractDSI, x::AbstractVector, gx::AbstractVector, f
         end
         return -(j \ gx), 0.0
     end
-    gmr = GMRES(-gx, flags.n_solver, flags.eps_krylov)
+    nsolver = max(1, nsolver)
+    gmr = GMRES(-gx, nsolver, flags.eps_krylov)
     solver_res = 1.0
-    for k in 1:flags.n_solver
+    for k in 1:nsolver
         q = test_vector(gmr)
         aq = jacobian_action(dsi, x, q, gx; eps_dx = flags.eps_dx, centered = flags.centered)
         iterate!(gmr, aq)
         solver_res = residual(gmr)
-        if solver_res < flags.eps_solver || (k == flags.n_solver && solver_res < flags.eps_solver_final)
+        if solver_res < flags.eps_solver || (k == nsolver && solver_res < flags.eps_solver_final)
             return solution(gmr), solver_res
         end
     end
     return solution(gmr), solver_res
 end
 
+function _hookstep_accept(
+    dsi::AbstractDSI,
+    x::AbstractVector,
+    gx::AbstractVector,
+    dxN::AbstractVector,
+    flags::NewtonSearchFlags,
+    delta::Float64,
+)
+    gnorm = norm(gx)
+    dnorm = norm(dxN)
+    dnorm < 1e-30 && return false, x, gx, delta
+
+    jdxN = jacobian_action(dsi, x, dxN, gx; eps_dx = flags.eps_dx, centered = flags.centered)
+
+    for _ in 1:flags.n_hook
+        s = min(1.0, delta / dnorm)
+        dx = s .* dxN
+
+        xtrial = x .+ dx
+        gtrial = eval_dsi(dsi, xtrial)
+        gtrial_norm = norm(gtrial)
+
+        if gtrial_norm >= (1 - flags.delta_fuzz) * gnorm
+            delta *= flags.lambda_min
+            delta < flags.delta_min && break
+            continue
+        end
+
+        pred = gnorm - norm(gx .+ s .* jdxN)
+        actual = gnorm - gtrial_norm
+        ratio = pred > 0 ? actual / pred : 0.0
+
+        if ratio >= flags.improv_req
+            hookstep_equals_newtonstep = s >= (1 - flags.delta_fuzz)
+            if ratio < flags.improve_ok
+                delta = max(flags.delta_min, flags.lambda_min * delta)
+            elseif ratio > flags.improve_good && !hookstep_equals_newtonstep
+                delta = min(flags.delta_max, flags.lambda_max * delta)
+            end
+            return true, xtrial, gtrial, delta
+        end
+
+        delta *= flags.lambda_min
+        delta < flags.delta_min && break
+    end
+
+    return false, x, gx, delta
+end
+
 function solve(alg::NewtonAlgorithm, dsi::AbstractDSI, x0::AbstractVector)
     x = collect(x0)
     gx = eval_dsi(dsi, x)
     delta = alg.flags.delta
+    nsolver = min(max(1, alg.flags.n_solver), max(1, alg.flags.n_solver_max))
+    gx_prev = norm(gx)
     for _ in 1:alg.flags.n_newton
         gnorm = norm(gx)
         if gnorm < alg.flags.eps_search
             return x, gnorm
         end
-        dx, _ = _linear_step(dsi, x, gx, alg.flags)
-        if alg.flags.optimization == :hookstep && norm(dx) > delta
-            dx .*= delta / norm(dx)
+        dxN, _ = _linear_step(dsi, x, gx, alg.flags; nsolver = nsolver)
+
+        if alg.flags.optimization == :hookstep
+            accepted, xnew, gnew, delta_new = _hookstep_accept(dsi, x, gx, dxN, alg.flags, delta)
+            if !accepted
+                delta = delta_new
+                if delta < alg.flags.delta_min
+                    break
+                end
+                continue
+            end
+            x = xnew
+            gx = gnew
+            delta = delta_new
+        else
+            dx = copy(dxN)
+            if norm(dx) > delta
+                dx .*= delta / norm(dx)
+            end
+
+            λ = 1.0
+            accepted = false
+            while λ >= alg.flags.lambda_min
+                xtrial = x .+ λ .* dx
+                gtrial = eval_dsi(dsi, xtrial)
+                if norm(gtrial) <= (1 - alg.flags.improv_req * λ) * gnorm
+                    x = xtrial
+                    gx = gtrial
+                    accepted = true
+                    delta = min(alg.flags.delta_max, max(delta, 2 * λ * norm(dx)))
+                    break
+                end
+                λ *= 0.5
+            end
+            if !accepted
+                delta *= 0.5
+                if delta < alg.flags.delta_min
+                    break
+                end
+                continue
+            end
         end
 
-        λ = 1.0
-        accepted = false
-        while λ >= alg.flags.lambda_min
-            xtrial = x .+ λ .* dx
-            gtrial = eval_dsi(dsi, xtrial)
-            if norm(gtrial) <= (1 - alg.flags.improv_req * λ) * gnorm
-                x = xtrial
-                gx = gtrial
-                accepted = true
-                delta = min(alg.flags.delta_max, max(delta, 2 * λ * norm(dx)))
-                break
-            end
-            λ *= 0.5
+        gcurr = norm(gx)
+        rate = gx_prev / max(gcurr, 1e-30)
+        if rate < alg.flags.g_ratio
+            nsolver = min(max(1, alg.flags.n_solver_max), max(nsolver + 20, Int(ceil(1.25 * nsolver))))
+        elseif rate > 2 * alg.flags.g_ratio
+            nsolver = max(1, Int(floor(0.8 * nsolver)))
         end
-        if !accepted
-            delta *= 0.5
-            if delta < alg.flags.delta_min
-                break
-            end
-        end
+        gx_prev = gcurr
     end
     return x, norm(gx)
 end
@@ -346,11 +429,18 @@ function _augment_newton_flags(flags::NewtonSearchFlags, n_unknown::Int)
                              centered = flags.centered,
                              n_newton = flags.n_newton,
                              n_solver = max(flags.n_solver, n_unknown),
+                             n_solver_max = max(flags.n_solver_max, n_unknown),
+                             n_hook = flags.n_hook,
                              delta = flags.delta,
                              delta_min = flags.delta_min,
                              delta_max = flags.delta_max,
+                             delta_fuzz = flags.delta_fuzz,
                              improv_req = flags.improv_req,
-                             lambda_min = flags.lambda_min)
+                             improve_ok = flags.improve_ok,
+                             improve_good = flags.improve_good,
+                             lambda_min = flags.lambda_min,
+                             lambda_max = flags.lambda_max,
+                             g_ratio = flags.g_ratio)
 end
 
 function continue_branch(dsi::ParamDSI, x_init::AbstractVector, μ_start::Real;

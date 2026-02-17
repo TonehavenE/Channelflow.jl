@@ -42,7 +42,7 @@ end
 @testset "NSolver NewtonAlgorithm" begin
     dsi = FunctionDSI(x -> [x[1]^2 - 2.0])
     alg = NewtonAlgorithm(NewtonSearchFlags(n_newton = 20, n_solver = 10, eps_search = 1e-12, optimization = :hookstep, delta = 0.5))
-    x, gx = solve(alg, dsi, [1.0])
+    x, gx = Channelflow.NSolver.solve(alg, dsi, [1.0])
     @test gx < 1e-10
     @test isapprox(x[1], sqrt(2), atol = 1e-8)
 end
