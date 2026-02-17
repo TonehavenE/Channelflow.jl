@@ -1,4 +1,0 @@
-#cmakedefine SIZEOF_DOUBLE ${SIZEOF_DOUBLE }
-#cmakedefine SIZEOF_INT ${SIZEOF_INT }
-#cmakedefine PACKAGE_VERSION "${PACKAGE_VERSION}"
-#cmakedefine HAVE_LIBHDF5_CPP "${HAVE_LIBHDF5_CPP}"
