@@ -10,8 +10,16 @@ import ..TauSolvers: solve!
 export NSE, nonlinear!
 
 function _configured_mode_threads()
-    # Threaded implicit mode solves are not numerically robust yet.
-    # Keep this path serial for parity with reference behavior.
+    if haskey(ENV, "CHANNELFLOW_MODE_THREADS")
+        cfg = strip(ENV["CHANNELFLOW_MODE_THREADS"])
+        if lowercase(cfg) == "auto"
+            return Threads.nthreads()
+        end
+        nthreads = tryparse(Int, cfg)
+        if nthreads !== nothing && nthreads > 0
+            return nthreads
+        end
+    end
     return 1
 end
 
@@ -847,6 +855,94 @@ function _solve_nse_mode!(
     return
 end
 
+function _solve_nse_threaded!(
+    eqn::NSE,
+    uout::FlowField{T},
+    u_spec::Array{Complex{T},4},
+    p_spec::Array{Complex{T},4},
+    rhs_spec::Array{Complex{T},4},
+    tausolvers::Array{TauSolver,3},
+    s::Int,
+    flags::DNSFlags,
+    kxmax::Int,
+    kzmax::Int,
+    nx_even::Bool,
+    nz_even::Bool,
+    dealias::Bool,
+) where {T<:Real}
+    Threads.@threads for mx = 1:eqn.spatial.Mx
+        kx = eqn.spatial.kx_vals[mx]
+        scratch = eqn.mode_scratch[mx]
+        uk_re = realview(scratch.uk)
+        uk_im = imagview(scratch.uk)
+        vk_re = realview(scratch.vk)
+        vk_im = imagview(scratch.vk)
+        wk_re = realview(scratch.wk)
+        wk_im = imagview(scratch.wk)
+        Pk_re = realview(scratch.Pk)
+        Pk_im = imagview(scratch.Pk)
+        Rvk_re = realview(scratch.Rvk)
+        Rvk_im = imagview(scratch.Rvk)
+        for mz = 1:eqn.spatial.Mz
+            kz = eqn.spatial.kz_vals[mz]
+            if (kx == kxmax || kz == kzmax) || (dealias && is_aliased(uout, kx, kz))
+                continue
+            end
+            _solve_nse_mode!(
+                eqn, u_spec, p_spec, rhs_spec, mx, mz, kx, kz, kxmax, kzmax,
+                nx_even, nz_even, flags, scratch,
+                uk_re, uk_im, vk_re, vk_im, wk_re, wk_im, Pk_re, Pk_im, Rvk_re, Rvk_im,
+                tausolvers, s,
+            )
+        end
+    end
+    return
+end
+
+function _solve_nse_serial!(
+    eqn::NSE,
+    uout::FlowField{T},
+    u_spec::Array{Complex{T},4},
+    p_spec::Array{Complex{T},4},
+    rhs_spec::Array{Complex{T},4},
+    tausolvers::Array{TauSolver,3},
+    s::Int,
+    flags::DNSFlags,
+    kxmax::Int,
+    kzmax::Int,
+    nx_even::Bool,
+    nz_even::Bool,
+    dealias::Bool,
+) where {T<:Real}
+    scratch = eqn.mode_scratch[1]
+    uk_re = realview(scratch.uk)
+    uk_im = imagview(scratch.uk)
+    vk_re = realview(scratch.vk)
+    vk_im = imagview(scratch.vk)
+    wk_re = realview(scratch.wk)
+    wk_im = imagview(scratch.wk)
+    Pk_re = realview(scratch.Pk)
+    Pk_im = imagview(scratch.Pk)
+    Rvk_re = realview(scratch.Rvk)
+    Rvk_im = imagview(scratch.Rvk)
+    @inbounds for mx = 1:eqn.spatial.Mx
+        kx = eqn.spatial.kx_vals[mx]
+        for mz = 1:eqn.spatial.Mz
+            kz = eqn.spatial.kz_vals[mz]
+            if (kx == kxmax || kz == kzmax) || (dealias && is_aliased(uout, kx, kz))
+                continue
+            end
+            _solve_nse_mode!(
+                eqn, u_spec, p_spec, rhs_spec, mx, mz, kx, kz, kxmax, kzmax,
+                nx_even, nz_even, flags, scratch,
+                uk_re, uk_im, vk_re, vk_im, wk_re, wk_im, Pk_re, Pk_im, Rvk_re, Rvk_im,
+                tausolvers, s,
+            )
+        end
+    end
+    return
+end
+
 function _solve_nse!(eqn::NSE, uout::FlowField{T}, pout::FlowField{T}, rhsu::FlowField{T}, s::Int, flags::DNSFlags) where {T<:Number}
     @assert xz_state(uout) == Spectral && y_state(uout) == Spectral
     @assert xz_state(pout) == Spectral && y_state(pout) == Spectral
@@ -867,59 +963,15 @@ function _solve_nse!(eqn::NSE, uout::FlowField{T}, pout::FlowField{T}, rhsu::Flo
     use_threads = nsolve_threads > 1 && eqn.spatial.Mx > 1
 
     if use_threads
-        Threads.@threads for mx = 1:eqn.spatial.Mx
-            kx = eqn.spatial.kx_vals[mx]
-            scratch = eqn.mode_scratch[mx]
-            uk_re = realview(scratch.uk)
-            uk_im = imagview(scratch.uk)
-            vk_re = realview(scratch.vk)
-            vk_im = imagview(scratch.vk)
-            wk_re = realview(scratch.wk)
-            wk_im = imagview(scratch.wk)
-            Pk_re = realview(scratch.Pk)
-            Pk_im = imagview(scratch.Pk)
-            Rvk_re = realview(scratch.Rvk)
-            Rvk_im = imagview(scratch.Rvk)
-            for mz = 1:eqn.spatial.Mz
-                kz = eqn.spatial.kz_vals[mz]
-                if (kx == kxmax || kz == kzmax) || (dealias && is_aliased(uout, kx, kz))
-                    continue
-                end
-                _solve_nse_mode!(
-                    eqn, u_spec, p_spec, rhs_spec, mx, mz, kx, kz, kxmax, kzmax,
-                    nx_even, nz_even, flags, scratch,
-                    uk_re, uk_im, vk_re, vk_im, wk_re, wk_im, Pk_re, Pk_im, Rvk_re, Rvk_im,
-                    tausolvers, s,
-                )
-            end
-        end
+        _solve_nse_threaded!(
+            eqn, uout, u_spec, p_spec, rhs_spec, tausolvers, s, flags,
+            kxmax, kzmax, nx_even, nz_even, dealias,
+        )
     else
-        scratch = eqn.mode_scratch[1]
-        uk_re = realview(scratch.uk)
-        uk_im = imagview(scratch.uk)
-        vk_re = realview(scratch.vk)
-        vk_im = imagview(scratch.vk)
-        wk_re = realview(scratch.wk)
-        wk_im = imagview(scratch.wk)
-        Pk_re = realview(scratch.Pk)
-        Pk_im = imagview(scratch.Pk)
-        Rvk_re = realview(scratch.Rvk)
-        Rvk_im = imagview(scratch.Rvk)
-        @inbounds for mx = 1:eqn.spatial.Mx
-            kx = eqn.spatial.kx_vals[mx]
-            for mz = 1:eqn.spatial.Mz
-                kz = eqn.spatial.kz_vals[mz]
-                if (kx == kxmax || kz == kzmax) || (dealias && is_aliased(uout, kx, kz))
-                    continue
-                end
-                _solve_nse_mode!(
-                    eqn, u_spec, p_spec, rhs_spec, mx, mz, kx, kz, kxmax, kzmax,
-                    nx_even, nz_even, flags, scratch,
-                    uk_re, uk_im, vk_re, vk_im, wk_re, wk_im, Pk_re, Pk_im, Rvk_re, Rvk_im,
-                    tausolvers, s,
-                )
-            end
-        end
+        _solve_nse_serial!(
+            eqn, uout, u_spec, p_spec, rhs_spec, tausolvers, s, flags,
+            kxmax, kzmax, nx_even, nz_even, dealias,
+        )
     end
     return
 end
