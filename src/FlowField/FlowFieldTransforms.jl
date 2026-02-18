@@ -8,20 +8,30 @@ Implements Fourier transforms in x,z directions and Chebyshev transforms in y di
 using FFTW
 using AbstractFFTs
 using LinearAlgebra: mul!
+using Base.Threads
 
 export FlowFieldTransforms,
     make_spectral_xz!, make_physical_xz!, make_physical_y!, make_spectral_y!
 
 const _fftw_threads_initialized = Ref(false)
 
-function _init_fftw_threads_once!()
-    _fftw_threads_initialized[] && return
+function _configured_fftw_threads()
     if haskey(ENV, "CHANNELFLOW_FFTW_THREADS")
-        nthreads = tryparse(Int, ENV["CHANNELFLOW_FFTW_THREADS"])
+        cfg = strip(ENV["CHANNELFLOW_FFTW_THREADS"])
+        if lowercase(cfg) == "auto"
+            return Threads.nthreads()
+        end
+        nthreads = tryparse(Int, cfg)
         if nthreads !== nothing && nthreads > 0
-            FFTW.set_num_threads(nthreads)
+            return nthreads
         end
     end
+    return 1
+end
+
+function _init_fftw_threads_once!()
+    _fftw_threads_initialized[] && return
+    FFTW.set_num_threads(max(1, _configured_fftw_threads()))
     _fftw_threads_initialized[] = true
     return
 end
