@@ -3,10 +3,17 @@ using ..ChebyCoeffs
 using ..FlowFields
 using ..BasisFuncs
 import Base.@kwdef
+using Base.Threads
 
 import ..TauSolvers: solve!
 
 export NSE, nonlinear!
+
+function _configured_mode_threads()
+    # Threaded implicit mode solves are not numerically robust yet.
+    # Keep this path serial for parity with reference behavior.
+    return 1
+end
 
 function profile(ff::FlowField{T}, mx::Int, mz::Int, i::Int) where {T<:Number}
     ret = ChebyCoeff{ComplexF64}(ff.domain.Ny, ff.domain.a, ff.domain.b, y_state(ff))
@@ -152,6 +159,38 @@ function TransientFields(temp::FlowField, Nyd::Int, a::Real, b::Real)
     )
 end
 
+@kwdef mutable struct ModeScratch
+    uk::ChebyCoeff{ComplexF64,Vector{ComplexF64}}
+    vk::ChebyCoeff{ComplexF64,Vector{ComplexF64}}
+    wk::ChebyCoeff{ComplexF64,Vector{ComplexF64}}
+    Pk::ChebyCoeff{ComplexF64,Vector{ComplexF64}}
+    Pyk::ChebyCoeff{ComplexF64,Vector{ComplexF64}}
+    Ruk::ChebyCoeff{ComplexF64,Vector{ComplexF64}}
+    Rvk::ChebyCoeff{ComplexF64,Vector{ComplexF64}}
+    Rwk::ChebyCoeff{ComplexF64,Vector{ComplexF64}}
+end
+
+function ModeScratch(Nyd::Int, a::Real, b::Real)
+    uk = ChebyCoeff{ComplexF64}(Nyd, a, b, Spectral)
+    vk = ChebyCoeff{ComplexF64}(Nyd, a, b, Spectral)
+    wk = ChebyCoeff{ComplexF64}(Nyd, a, b, Spectral)
+    Pk = ChebyCoeff{ComplexF64}(Nyd, a, b, Spectral)
+    Pyk = ChebyCoeff{ComplexF64}(Nyd, a, b, Spectral)
+    Ruk = ChebyCoeff{ComplexF64}(Nyd, a, b, Spectral)
+    Rvk = ChebyCoeff{ComplexF64}(Nyd, a, b, Spectral)
+    Rwk = ChebyCoeff{ComplexF64}(Nyd, a, b, Spectral)
+    return ModeScratch(
+        uk=uk,
+        vk=vk,
+        wk=wk,
+        Pk=Pk,
+        Pyk=Pyk,
+        Ruk=Ruk,
+        Rvk=Rvk,
+        Rwk=Rwk,
+    )
+end
+
 @kwdef mutable struct NSE <: Equation
     lambda_t::Vector{Float64}
     tausolvers::Union{Array{TauSolver,3},Nothing}
@@ -160,6 +199,8 @@ end
     spatial::SpatialParameters
     baseflow::BaseFlowMembers
     tmp::TransientFields
+    mode_threads::Int
+    mode_scratch::Vector{ModeScratch}
 end
 
 #TODO finish implementing laminar_profile
@@ -320,13 +361,18 @@ function NSE(fields::Vector{FlowField{T}}, flags::DNSFlags) where {T<:Number}
     end
 
     transients = TransientFields(tmp, Nyd, u.domain.a, u.domain.b)
+    mode_threads = max(1, _configured_mode_threads())
+    mode_scratch_count = mode_threads > 1 ? spatial.Mx : 1
+    mode_scratch = [ModeScratch(Nyd, u.domain.a, u.domain.b) for _ = 1:mode_scratch_count]
 
     return NSE(
         lambda_t=[0.0],
         tausolvers=nothing,
         spatial=spatial,
         baseflow=baseflow,
-        tmp=transients
+        tmp=transients,
+        mode_threads=mode_threads,
+        mode_scratch=mode_scratch,
     )
 end
 
@@ -402,9 +448,18 @@ function navierstokes_nonlinear!(u::FlowField{Q}, Ubase::ChebyCoeff{R}, Wbase::C
     # add rotation term
     if flags.rotation != 0.0
         make_physical!(u)
-        for nx = 1:u.domain.Nx, ny = 1:u.domain.Ny, nz = 1:u.domain.Nz
-            f[nx, ny, nz, 1] -= (flags.rotation) * u[nx, ny, nz, 2]
-            f[nx, ny, nz, 2] += (flags.rotation) * u[nx, ny, nz, 1]
+        if Threads.nthreads() > 1 && u.domain.Nz > 1
+            Threads.@threads for nz = 1:u.domain.Nz
+                @inbounds for ny = 1:u.domain.Ny, nx = 1:u.domain.Nx
+                    f[nx, ny, nz, 1] -= (flags.rotation) * u[nx, ny, nz, 2]
+                    f[nx, ny, nz, 2] += (flags.rotation) * u[nx, ny, nz, 1]
+                end
+            end
+        else
+            for nx = 1:u.domain.Nx, ny = 1:u.domain.Ny, nz = 1:u.domain.Nz
+                f[nx, ny, nz, 1] -= (flags.rotation) * u[nx, ny, nz, 2]
+                f[nx, ny, nz, 2] += (flags.rotation) * u[nx, ny, nz, 1]
+            end
         end
         make_spectral!(u)
         make_spectral!(f)
@@ -460,13 +515,26 @@ function rotational_nonlinear!(u::FlowField{Q}, f::FlowField{R}, tmp::FlowField{
     u_phys = uwork.physical_data
     vort_phys = vort.physical_data
     f_phys = f.physical_data
-    @inbounds for nz = 1:u.domain.Nz, ny = 1:u.domain.Ny, nx = 1:u.domain.Nx
-        # (vort x u)_x
-        f_phys[nx, ny, nz, 1] = vort_phys[nx, ny, nz, 2] * u_phys[nx, ny, nz, 3] - vort_phys[nx, ny, nz, 3] * u_phys[nx, ny, nz, 2]
-        # (vort x u)_y
-        f_phys[nx, ny, nz, 2] = vort_phys[nx, ny, nz, 3] * u_phys[nx, ny, nz, 1] - vort_phys[nx, ny, nz, 1] * u_phys[nx, ny, nz, 3]
-        # (vort x u)_z
-        f_phys[nx, ny, nz, 3] = vort_phys[nx, ny, nz, 1] * u_phys[nx, ny, nz, 2] - vort_phys[nx, ny, nz, 2] * u_phys[nx, ny, nz, 1]
+    if Threads.nthreads() > 1 && u.domain.Nz > 1
+        Threads.@threads for nz = 1:u.domain.Nz
+            @inbounds for ny = 1:u.domain.Ny, nx = 1:u.domain.Nx
+                # (vort x u)_x
+                f_phys[nx, ny, nz, 1] = vort_phys[nx, ny, nz, 2] * u_phys[nx, ny, nz, 3] - vort_phys[nx, ny, nz, 3] * u_phys[nx, ny, nz, 2]
+                # (vort x u)_y
+                f_phys[nx, ny, nz, 2] = vort_phys[nx, ny, nz, 3] * u_phys[nx, ny, nz, 1] - vort_phys[nx, ny, nz, 1] * u_phys[nx, ny, nz, 3]
+                # (vort x u)_z
+                f_phys[nx, ny, nz, 3] = vort_phys[nx, ny, nz, 1] * u_phys[nx, ny, nz, 2] - vort_phys[nx, ny, nz, 2] * u_phys[nx, ny, nz, 1]
+            end
+        end
+    else
+        @inbounds for nz = 1:u.domain.Nz, ny = 1:u.domain.Ny, nx = 1:u.domain.Nx
+            # (vort x u)_x
+            f_phys[nx, ny, nz, 1] = vort_phys[nx, ny, nz, 2] * u_phys[nx, ny, nz, 3] - vort_phys[nx, ny, nz, 3] * u_phys[nx, ny, nz, 2]
+            # (vort x u)_y
+            f_phys[nx, ny, nz, 2] = vort_phys[nx, ny, nz, 3] * u_phys[nx, ny, nz, 1] - vort_phys[nx, ny, nz, 1] * u_phys[nx, ny, nz, 3]
+            # (vort x u)_z
+            f_phys[nx, ny, nz, 3] = vort_phys[nx, ny, nz, 1] * u_phys[nx, ny, nz, 2] - vort_phys[nx, ny, nz, 2] * u_phys[nx, ny, nz, 1]
+        end
     end
 
     if finalstate == Spectral
@@ -674,10 +742,117 @@ function solve!(eqn::NSE, outfields::AbstractVector{<:FlowField}, rhs::AbstractV
     _solve_nse!(eqn, outfields[1], outfields[2], rhs[1], s, flags)
 end
 
+function _solve_nse_mode!(
+    eqn::NSE,
+    u_spec::AbstractArray{Complex{T},4},
+    p_spec::AbstractArray{Complex{T},4},
+    rhs_spec::AbstractArray{Complex{T},4},
+    mx::Int,
+    mz::Int,
+    kx::Int,
+    kz::Int,
+    kxmax::Int,
+    kzmax::Int,
+    nx_even::Bool,
+    nz_even::Bool,
+    flags::DNSFlags,
+    scratch::ModeScratch,
+    uk_re,
+    uk_im,
+    vk_re,
+    vk_im,
+    wk_re,
+    wk_im,
+    Pk_re,
+    Pk_im,
+    Rvk_re,
+    Rvk_im,
+    tausolvers::Array{TauSolver,3},
+    s::Int,
+) where {T<:Real}
+    ukd = scratch.uk.data
+    vkd = scratch.vk.data
+    wkd = scratch.wk.data
+    Pkd = scratch.Pk.data
+    Rukd = scratch.Ruk.data
+    Rvkd = scratch.Rvk.data
+    Rwkd = scratch.Rwk.data
+
+    # Construct ComplexChebyCoeff from RHS
+    @inbounds for ny = 1:eqn.spatial.Nyd
+        Rukd[ny] = rhs_spec[mx, ny, mz, 1]
+        Rvkd[ny] = rhs_spec[mx, ny, mz, 2]
+        Rwkd[ny] = rhs_spec[mx, ny, mz, 3]
+    end
+
+    # Solve the tau equations
+    if kx != 0 || kz != 0
+        solve!(tausolvers[s, mx, mz], scratch.uk, scratch.vk, scratch.wk, scratch.Pk,
+            scratch.Ruk, scratch.Rvk, scratch.Rwk,
+            uk_re, uk_im, vk_re, vk_im,
+            wk_re, wk_im, Pk_re, Pk_im,
+            Rvk_re, Rvk_im)
+    else # kx,kz == 0,0
+        if length(eqn.baseflow.Ubase_yy.data) > 0
+            @inbounds for ny = 1:eqn.spatial.Ny
+                Rukd[ny] += flags.nu * eqn.baseflow.Ubase_yy[ny]
+            end
+        end
+        if length(eqn.baseflow.Wbase_yy.data) > 0
+            @inbounds for ny = 1:eqn.spatial.Ny
+                Rwkd[ny] += flags.nu * eqn.baseflow.Wbase_yy[ny]
+            end
+        end
+
+        if flags.constraint == PressureGradient
+            Rukd[1] -= Complex(eqn.baseflow.dPdx_Ref, 0)
+            Rwkd[1] -= Complex(eqn.baseflow.dPdz_Ref, 0)
+            solve!(tausolvers[s, mx, mz], scratch.uk, scratch.vk, scratch.wk, scratch.Pk,
+                scratch.Ruk, scratch.Rvk, scratch.Rwk,
+                uk_re, uk_im, vk_re, vk_im,
+                wk_re, wk_im, Pk_re, Pk_im,
+                Rvk_re, Rvk_im)
+        else
+            solve!(tausolvers[s, mx, mz], scratch.uk, scratch.vk, scratch.wk, scratch.Pk,
+                eqn.baseflow.dPdx_Act, eqn.baseflow.dPdz_Act, scratch.Ruk, scratch.Rvk, scratch.Rwk,
+                eqn.baseflow.Ubulk_Ref - eqn.baseflow.Ubulk_Base,
+                eqn.baseflow.Wbulk_Ref - eqn.baseflow.Wbulk_Base)
+
+            @assert abs(eqn.baseflow.Ubulk_Ref - eqn.baseflow.Ubulk_Base - mean_value(scratch.uk.re)) < 1e-15 "UbulkRef != UbulkAct = UbulkBase + uk.re.mean()"
+            @assert abs(eqn.baseflow.Wbulk_Ref - eqn.baseflow.Wbulk_Base - mean_value(scratch.wk.re)) < 1e-15 "WbulkRef != WbulkAct = WbulkBase + wk.re.mean()"
+        end
+    end
+
+    # Load solutions into u and p.
+    force_real = ((kx == 0 && kz == 0) ||
+                  (nx_even && kx == kxmax && kz == 0) ||
+                  (nz_even && kz == kzmax && kx == 0) ||
+                  (nx_even && nz_even && kx == kxmax && kz == kzmax))
+
+    if force_real
+        @inbounds for ny = 1:eqn.spatial.Nyd
+            u_spec[mx, ny, mz, 1] = Complex(real(ukd[ny]), 0.0)
+            u_spec[mx, ny, mz, 2] = Complex(real(vkd[ny]), 0.0)
+            u_spec[mx, ny, mz, 3] = Complex(real(wkd[ny]), 0.0)
+            p_spec[mx, ny, mz, 1] = Complex(real(Pkd[ny]), 0.0)
+        end
+    else
+        @inbounds for ny = 1:eqn.spatial.Nyd
+            u_spec[mx, ny, mz, 1] = ukd[ny]
+            u_spec[mx, ny, mz, 2] = vkd[ny]
+            u_spec[mx, ny, mz, 3] = wkd[ny]
+            p_spec[mx, ny, mz, 1] = Pkd[ny]
+        end
+    end
+    return
+end
+
 function _solve_nse!(eqn::NSE, uout::FlowField{T}, pout::FlowField{T}, rhsu::FlowField{T}, s::Int, flags::DNSFlags) where {T<:Number}
     @assert xz_state(uout) == Spectral && y_state(uout) == Spectral
     @assert xz_state(pout) == Spectral && y_state(pout) == Spectral
     @assert xz_state(rhsu) == Spectral && y_state(rhsu) == Spectral
+
+    tausolvers = eqn.tausolvers::Array{TauSolver,3}
 
     kxmax = kx_max(uout)
     kzmax = kz_max(uout)
@@ -686,119 +861,65 @@ function _solve_nse!(eqn::NSE, uout::FlowField{T}, pout::FlowField{T}, rhsu::Flo
     u_spec = uout.spectral_data
     p_spec = pout.spectral_data
     rhs_spec = rhsu.spectral_data
-    ukd = eqn.tmp.uk.data
-    vkd = eqn.tmp.vk.data
-    wkd = eqn.tmp.wk.data
-    Pkd = eqn.tmp.Pk.data
-    Rukd = eqn.tmp.Ruk.data
-    Rvkd = eqn.tmp.Rvk.data
-    Rwkd = eqn.tmp.Rwk.data
-    uk_re = realview(eqn.tmp.uk)
-    uk_im = imagview(eqn.tmp.uk)
-    vk_re = realview(eqn.tmp.vk)
-    vk_im = imagview(eqn.tmp.vk)
-    wk_re = realview(eqn.tmp.wk)
-    wk_im = imagview(eqn.tmp.wk)
-    Pk_re = realview(eqn.tmp.Pk)
-    Pk_im = imagview(eqn.tmp.Pk)
-    Rvk_re = realview(eqn.tmp.Rvk)
-    Rvk_im = imagview(eqn.tmp.Rvk)
+    dealias = dealias_xz(flags)
 
-    # println("outfields[1] is:")
-    # display(outfields[1])
-    # println("rhs[1] is:")
-    # display(rhs[1])
+    nsolve_threads = min(max(1, eqn.mode_threads), Threads.nthreads())
+    use_threads = nsolve_threads > 1 && eqn.spatial.Mx > 1
 
-    # Update each Fourier mode with solution of the implicit problem
-    # Since we're not using MPI, we loop over all modes directly
-    @inbounds for mx = 1:eqn.spatial.Mx
-        kx = eqn.spatial.kx_vals[mx]
-
-        for mz = 1:eqn.spatial.Mz
-            kz = eqn.spatial.kz_vals[mz]
-
-            # Skip Nyquist/aliased mode, but continue scanning the rest of kz.
-            if (kx == kxmax || kz == kzmax) || (dealias_xz(flags) && is_aliased(uout, kx, kz))
-                continue
+    if use_threads
+        Threads.@threads for mx = 1:eqn.spatial.Mx
+            kx = eqn.spatial.kx_vals[mx]
+            scratch = eqn.mode_scratch[mx]
+            uk_re = realview(scratch.uk)
+            uk_im = imagview(scratch.uk)
+            vk_re = realview(scratch.vk)
+            vk_im = imagview(scratch.vk)
+            wk_re = realview(scratch.wk)
+            wk_im = imagview(scratch.wk)
+            Pk_re = realview(scratch.Pk)
+            Pk_im = imagview(scratch.Pk)
+            Rvk_re = realview(scratch.Rvk)
+            Rvk_im = imagview(scratch.Rvk)
+            for mz = 1:eqn.spatial.Mz
+                kz = eqn.spatial.kz_vals[mz]
+                if (kx == kxmax || kz == kzmax) || (dealias && is_aliased(uout, kx, kz))
+                    continue
+                end
+                _solve_nse_mode!(
+                    eqn, u_spec, p_spec, rhs_spec, mx, mz, kx, kz, kxmax, kzmax,
+                    nx_even, nz_even, flags, scratch,
+                    uk_re, uk_im, vk_re, vk_im, wk_re, wk_im, Pk_re, Pk_im, Rvk_re, Rvk_im,
+                    tausolvers, s,
+                )
             end
-
-            # Construct ComplexChebyCoeff from RHS
-            for ny = 1:eqn.spatial.Nyd
-                Rukd[ny] = rhs_spec[mx, ny, mz, 1]
-                Rvkd[ny] = rhs_spec[mx, ny, mz, 2]
-                Rwkd[ny] = rhs_spec[mx, ny, mz, 3]
-            end
-
-            # Solve the tau equations
-            if kx != 0 || kz != 0
-                solve!(eqn.tausolvers[s, mx, mz], eqn.tmp.uk, eqn.tmp.vk, eqn.tmp.wk, eqn.tmp.Pk,
-                    eqn.tmp.Ruk, eqn.tmp.Rvk, eqn.tmp.Rwk,
-                    uk_re, uk_im, vk_re, vk_im, wk_re, wk_im, Pk_re, Pk_im, Rvk_re, Rvk_im)
-            else  # kx,kz == 0,0
-                # LHS includes also the constant terms C which can be added to RHS
-                if length(eqn.baseflow.Ubase_yy.data) > 0
-                    for ny = 1:eqn.spatial.Ny
-                        Rukd[ny] += flags.nu * eqn.baseflow.Ubase_yy[ny]  # Rx has addl'l term from Ubase
-                    end
+        end
+    else
+        scratch = eqn.mode_scratch[1]
+        uk_re = realview(scratch.uk)
+        uk_im = imagview(scratch.uk)
+        vk_re = realview(scratch.vk)
+        vk_im = imagview(scratch.vk)
+        wk_re = realview(scratch.wk)
+        wk_im = imagview(scratch.wk)
+        Pk_re = realview(scratch.Pk)
+        Pk_im = imagview(scratch.Pk)
+        Rvk_re = realview(scratch.Rvk)
+        Rvk_im = imagview(scratch.Rvk)
+        @inbounds for mx = 1:eqn.spatial.Mx
+            kx = eqn.spatial.kx_vals[mx]
+            for mz = 1:eqn.spatial.Mz
+                kz = eqn.spatial.kz_vals[mz]
+                if (kx == kxmax || kz == kzmax) || (dealias && is_aliased(uout, kx, kz))
+                    continue
                 end
-                if length(eqn.baseflow.Wbase_yy.data) > 0
-                    for ny = 1:eqn.spatial.Ny
-                        Rwkd[ny] += flags.nu * eqn.baseflow.Wbase_yy[ny]  # Rz has addl'l term from Wbase
-                    end
-                end
-
-                if flags.constraint == PressureGradient
-                    # pressure is supplied, put on RHS of tau eqn
-                    Rukd[1] -= Complex(eqn.baseflow.dPdx_Ref, 0)
-                    Rwkd[1] -= Complex(eqn.baseflow.dPdz_Ref, 0)
-                    solve!(eqn.tausolvers[s, mx, mz], eqn.tmp.uk, eqn.tmp.vk, eqn.tmp.wk, eqn.tmp.Pk,
-                        eqn.tmp.Ruk, eqn.tmp.Rvk, eqn.tmp.Rwk,
-                        uk_re, uk_im, vk_re, vk_im, wk_re, wk_im, Pk_re, Pk_im, Rvk_re, Rvk_im)
-                    # Bulk vel is free variable determined from soln of tau eqn 
-                    # TODO: write method that computes UbulkAct everytime it is needed
-
-                else  # const bulk velocity
-                    # bulk velocity is supplied, use alternative tau solver
-
-                    # Use tausolver with additional variable and constraint:
-                    # free variable: dPdxAct at next time-step,
-                    # constraint:    UbulkBase + mean(u) = UbulkRef.
-                    solve!(eqn.tausolvers[s, mx, mz], eqn.tmp.uk, eqn.tmp.vk, eqn.tmp.wk, eqn.tmp.Pk,
-                        eqn.baseflow.dPdx_Act, eqn.baseflow.dPdz_Act, eqn.tmp.Ruk, eqn.tmp.Rvk, eqn.tmp.Rwk,
-                        eqn.baseflow.Ubulk_Ref - eqn.baseflow.Ubulk_Base,
-                        eqn.baseflow.Wbulk_Ref - eqn.baseflow.Wbulk_Base)
-
-                    @assert abs(eqn.baseflow.Ubulk_Ref - eqn.baseflow.Ubulk_Base - mean_value(eqn.tmp.uk.re)) < 1e-15 "UbulkRef != UbulkAct = UbulkBase + uk.re.mean()"
-                    @assert abs(eqn.baseflow.Wbulk_Ref - eqn.baseflow.Wbulk_Base - mean_value(eqn.tmp.wk.re)) < 1e-15 "WbulkRef != WbulkAct = WbulkBase + wk.re.mean()"
-                end
-            end
-
-            # Load solutions into u and p.
-            # Because of FFTW complex symmetries
-            # The 0,0 mode must be real.
-            # For Nx even, the kxmax,0 mode must be real
-            # For Nz even, the 0,kzmax mode must be real
-            # For Nx,Nz even, the kxmax,kzmax mode must be real
-            if ((kx == 0 && kz == 0) ||
-                (nx_even && kx == kxmax && kz == 0) ||
-                (nz_even && kz == kzmax && kx == 0) ||
-                (nx_even && nz_even && kx == kxmax && kz == kzmax))
-
-                for ny = 1:eqn.spatial.Nyd
-                    u_spec[mx, ny, mz, 1] = Complex(real(ukd[ny]), 0.0)
-                    u_spec[mx, ny, mz, 2] = Complex(real(vkd[ny]), 0.0)
-                    u_spec[mx, ny, mz, 3] = Complex(real(wkd[ny]), 0.0)
-                    p_spec[mx, ny, mz, 1] = Complex(real(Pkd[ny]), 0.0)
-                end
-            else
-                # The normal case, for general kx,kz
-                for ny = 1:eqn.spatial.Nyd
-                    u_spec[mx, ny, mz, 1] = ukd[ny]
-                    u_spec[mx, ny, mz, 2] = vkd[ny]
-                    u_spec[mx, ny, mz, 3] = wkd[ny]
-                    p_spec[mx, ny, mz, 1] = Pkd[ny]
-                end
+                _solve_nse_mode!(
+                    eqn, u_spec, p_spec, rhs_spec, mx, mz, kx, kz, kxmax, kzmax,
+                    nx_even, nz_even, flags, scratch,
+                    uk_re, uk_im, vk_re, vk_im, wk_re, wk_im, Pk_re, Pk_im, Rvk_re, Rvk_im,
+                    tausolvers, s,
+                )
             end
         end
     end
+    return
 end
