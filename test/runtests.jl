@@ -11,4 +11,5 @@ using Test
     include("metrics/metric_tests.jl")
     include("tausolver_tests.jl")
     include("tau_verification.jl")
+    include("nsolver_tests.jl")
 end

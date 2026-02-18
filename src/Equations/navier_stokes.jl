@@ -8,7 +8,7 @@ import ..TauSolvers: solve!
 
 export NSE, nonlinear!
 
-function profile(ff::FlowField, mx::Int, mz::Int, i::Int)
+function profile(ff::FlowField{T}, mx::Int, mz::Int, i::Int) where {T<:Number}
     ret = ChebyCoeff{ComplexF64}(ff.domain.Ny, ff.domain.a, ff.domain.b, y_state(ff))
     if xz_state(ff) == Spectral
         for ny = 1:ff.domain.Ny
@@ -23,7 +23,7 @@ function profile(ff::FlowField, mx::Int, mz::Int, i::Int)
     return ret
 end
 
-function profile(ff::FlowField, mx::Int, mz::Int)
+function profile(ff::FlowField{T}, mx::Int, mz::Int) where {T<:Number}
     ret = BasisFunc(num_dimensions(ff), ff.domain.Ny, mx_to_kx(ff, mx), mz_to_kz(ff, mz), ff.domain.Lx, ff.domain.Lz, ff.domain.a, ff.domain.b, y_state(ff))
     for i = 1:num_dimensions(ff), ny = 1:ff.domain.Ny
         ret[i, ny] = cmplx(ff, mx, ny, mz, i)
@@ -31,7 +31,7 @@ function profile(ff::FlowField, mx::Int, mz::Int)
     return ret
 end
 
-function get_Ubulk(ff::FlowField)
+function get_Ubulk(ff::FlowField{T}) where {T<:Number}
     ubulk = mean_value(profile(ff, 1, 1, 1))
     if abs(ubulk) < 1e-15
         ubulk = 0.0
@@ -39,7 +39,7 @@ function get_Ubulk(ff::FlowField)
     return ubulk
 end
 
-function get_Wbulk(ff::FlowField)
+function get_Wbulk(ff::FlowField{T}) where {T<:Number}
     wbulk = mean_value(profile(ff, 1, 1, 3))
     if abs(wbulk) < 1e-15
         wbulk = 0.0
@@ -47,38 +47,38 @@ function get_Wbulk(ff::FlowField)
     return wbulk
 end
 
-function dudy_a(ff::FlowField)
+function dudy_a(ff::FlowField{T}) where {T<:Number}
     @assert y_state(ff) == Spectral
     prof = profile(ff, 1, 1)
     dudy = derivative(realview(get_u(prof)))
     return eval_a(dudy)
 end
 
-function dudy_b(ff::FlowField)
+function dudy_b(ff::FlowField{T}) where {T<:Number}
     @assert y_state(ff) == Spectral
     prof = profile(ff, 1, 1)
     dudy = derivative(realview(get_u(prof)))
     return eval_b(dudy)
 end
 
-function dwdy_a(ff::FlowField)
+function dwdy_a(ff::FlowField{T}) where {T<:Number}
     @assert y_state(ff) == Spectral
     prof = profile(ff, 1, 1)
     dwdy = derivative(realview(get_w(prof)))
     return eval_a(dwdy)
 end
-function dwdy_b(ff::FlowField)
+function dwdy_b(ff::FlowField{T}) where {T<:Number}
     @assert y_state(ff) == Spectral
     prof = profile(ff, 1, 1)
     dwdy = derivative(realview(get_w(prof)))
     return eval_b(dwdy)
 end
 
-function get_dPdx(ff::FlowField, nu::Real)
+function get_dPdx(ff::FlowField{T}, nu::Real) where {T<:Number}
     nu * (dudy_b(ff) - dudy_a(ff)) / Ly(ff)
 end
 
-function get_dPdz(ff::FlowField, nu::Real)
+function get_dPdz(ff::FlowField{T}, nu::Real) where {T<:Number}
     nu * (dwdy_b(ff) - dwdy_a(ff)) / Ly(ff)
 end
 
@@ -92,6 +92,8 @@ end
     Nyd::Int # number of dealiased Chebyshev T(y) modes
     kxd_max::Int
     kzd_max::Int
+    kx_vals::Vector{Int}
+    kz_vals::Vector{Int}
 
     # Domain dimensions
     Lx::Real # x domain length
@@ -123,20 +125,22 @@ end
 end
 
 @kwdef mutable struct TransientFields
-    ff::FlowField
-    uk::ChebyCoeff{ComplexF64}
-    vk::ChebyCoeff{ComplexF64}
-    wk::ChebyCoeff{ComplexF64}
-    Pk::ChebyCoeff{ComplexF64}
-    Pyk::ChebyCoeff{ComplexF64}
-    Ruk::ChebyCoeff{ComplexF64}
-    Rvk::ChebyCoeff{ComplexF64}
-    Rwk::ChebyCoeff{ComplexF64}
+    ff::FlowField{<:Number}
+    ff2::FlowField{<:Number}
+    uk::ChebyCoeff{ComplexF64,Vector{ComplexF64}}
+    vk::ChebyCoeff{ComplexF64,Vector{ComplexF64}}
+    wk::ChebyCoeff{ComplexF64,Vector{ComplexF64}}
+    Pk::ChebyCoeff{ComplexF64,Vector{ComplexF64}}
+    Pyk::ChebyCoeff{ComplexF64,Vector{ComplexF64}}
+    Ruk::ChebyCoeff{ComplexF64,Vector{ComplexF64}}
+    Rvk::ChebyCoeff{ComplexF64,Vector{ComplexF64}}
+    Rwk::ChebyCoeff{ComplexF64,Vector{ComplexF64}}
 end
 
 function TransientFields(temp::FlowField, Nyd::Int, a::Real, b::Real)
     return TransientFields(
         ff=temp,
+        ff2=FlowField(temp),
         uk=ChebyCoeff{ComplexF64}(Nyd, a, b, Spectral),
         vk=ChebyCoeff{ComplexF64}(Nyd, a, b, Spectral),
         wk=ChebyCoeff{ComplexF64}(Nyd, a, b, Spectral),
@@ -149,8 +153,8 @@ function TransientFields(temp::FlowField, Nyd::Int, a::Real, b::Real)
 end
 
 @kwdef mutable struct NSE <: Equation
-    lambda_t::Vector{Real}
-    tausolvers::Union{AbstractArray,Nothing}
+    lambda_t::Vector{Float64}
+    tausolvers::Union{Array{TauSolver,3},Nothing}
 
     # Refactored components
     spatial::SpatialParameters
@@ -163,28 +167,21 @@ function laminar_profile(nu::Real, constraint::MeanConstraint, dPdx::Real, Ubulk
     u = ChebyCoeff(Ny, a, b, Spectral)
     H = b - a
     mu = Vsuck * H / nu
-    if abs(mu) == 0.0
-        if constraint == BulkVelocity
-            u[1] = 0.125 * (ub + ua) + 0.75 * Ubulk
-            u[2] = 0.5 * (ub - ua)
-            u[3] = 0.375 * (ub + ua) - 0.75 * Ubulk
-        else
-            dPdx *= ((b - a) / 2)^2
-            u[1] = 0.5 * (ub + ua) - 0.25 * dPdx / nu
-            u[2] = 0.5 * (ub - ua)
-            u[3] = 0.25 * dPdx / nu
-        end
+
+    # Non-zero suction is not implemented yet in Julia.
+    if abs(mu) > 1e-12
+        error("Error in laminar_profile: non-zero Vsuck is not implemented")
+    end
+
+    if constraint == BulkVelocity
+        u[1] = 0.125 * (ub + ua) + 0.75 * Ubulk
+        u[2] = 0.5 * (ub - ua)
+        u[3] = 0.375 * (ub + ua) - 0.75 * Ubulk
     else
-        set_state!(u, Physical)
-        dPdx_HH_nu = dPdx * H^2 / nu
-        y = chebypoints(Ny, a, b)
-        if abs(mu) > 1e-01
-            if constraint == BulkVelocity
-                k = -1.0 / expm1(-mu) - 1 / mu
-                dPdx_HH_nu = mu * (Ubulk - ua - (ub - ua) * k) / (0.5 - k)
-            end
-            # TODO implement this!
-        end
+        dPdx *= ((b - a) / 2)^2
+        u[1] = 0.5 * (ub + ua) - 0.25 * dPdx / nu
+        u[2] = 0.5 * (ub - ua)
+        u[3] = 0.25 * dPdx / nu
     end
     return u
 end
@@ -204,7 +201,7 @@ function create_base_flow(flags::DNSFlags, My::Int, a::Real, b::Real)
     elseif flags.baseflow == LinearBase
         Ubase = ChebyCoeff(My, a, b, Spectral)
         Wbase = ChebyCoeff(My, a, b, Spectral)
-        Ubase[1] = 1
+        Ubase[2] = 1
     elseif flags.baseflow == ParabolicBase
         @assert My > 2 "My must be greater than 2 for parabolic base flow"
         Ubase = ChebyCoeff(My, a, b, Spectral)
@@ -212,13 +209,11 @@ function create_base_flow(flags::DNSFlags, My::Int, a::Real, b::Real)
         Ubase[1] = 0.5
         Ubase[3] = -0.5
     elseif flags.baseflow == SuctionBase
-        error("Error in create_base_flow: SuctionBase not implemented")
         Ubase = laminar_profile(flags.nu, PressureGradient, 0, flags.Ubulk, flags.Vsuck, a, b, -0.5, 0.5, My)
         Wbase = ChebyCoeff(My, a, b, Spectral)
     elseif flags.baseflow == LaminarBase
-        error("Error in create_base_flow: LaminarBase not implemented")
         Ubase = laminar_profile(flags.nu, flags.constraint, flags.dPdx, flags.Ubulk, flags.Vsuck, a, b, flags.ulowerwall, flags.uupperwall, My)
-        Wbase = laminar_profile(flags.nu, flags.constraint, flags.dPdz, flags.Ubulk, flags.Vsuck, a, b, flags.wlowerwall, flags.wupperwall, My)
+        Wbase = laminar_profile(flags.nu, flags.constraint, flags.dPdz, flags.Wbulk, flags.Vsuck, a, b, flags.wlowerwall, flags.wupperwall, My)
     elseif flags.baseflow == ArbitraryBase
         error("Error in create_base_flow: Arbitrary base flow not implemented. Please provide (Ubase, Wbase) when constructing DNS.")
     else
@@ -307,6 +302,8 @@ function NSE(fields::Vector{FlowField{T}}, flags::DNSFlags) where {T<:Number}
         Nyd=Nyd,
         kxd_max=kxd_max,
         kzd_max=kzd_max,
+        kx_vals=[mx_to_kx(u, mx) for mx in 1:u.domain.Mx],
+        kz_vals=[mz_to_kz(u, mz) for mz in 1:u.domain.Mz],
         Lx=u.domain.Lx,
         Lz=u.domain.Lz,
         a=u.domain.a,
@@ -334,7 +331,7 @@ function NSE(fields::Vector{FlowField{T}}, flags::DNSFlags) where {T<:Number}
 end
 
 function reset_lambda!(eqn::NSE, lambda_t::Vector{T}, flags::DNSFlags) where {T<:Real}
-    eqn.lambda_t = lambda_t
+    eqn.lambda_t = Float64.(lambda_t)
 
     c = 4.0 * pi^2 * flags.nu
 
@@ -342,12 +339,12 @@ function reset_lambda!(eqn::NSE, lambda_t::Vector{T}, flags::DNSFlags) where {T<
     eqn.tausolvers = [
         begin
             # These calculations are done for each element of the new array
-            kx = mx_to_kx(eqn.tmp.ff, mx)
-            kz = mz_to_kz(eqn.tmp.ff, mz)
+            kx = eqn.spatial.kx_vals[mx]
+            kz = eqn.spatial.kz_vals[mz]
 
             # Check the condition for this element
             if (kx != kx_max(eqn.tmp.ff) || kz != kz_max(eqn.tmp.ff)) && (!dealias_xz(flags) || !is_aliased(eqn.tmp.ff, kx, kz))
-                lambda = lambda_t[j] + c * ((kx / eqn.spatial.Lx)^2 + (kz / eqn.spatial.Lz)^2)
+                lambda = eqn.lambda_t[j] + c * ((kx / eqn.spatial.Lx)^2 + (kz / eqn.spatial.Lz)^2)
 
                 # Construct the configured TauSolver for this grid point
                 TauSolver(kx, kz, eqn.spatial.Lx, eqn.spatial.Lz, eqn.spatial.a, eqn.spatial.b, lambda, flags.nu, eqn.spatial.Nyd, flags.taucorrection)
@@ -365,7 +362,7 @@ function create_RHS(eqn::NSE, fields::Vector{FlowField{T}}) where {T<:Number}
     return [FlowField(fields[1])]
 end
 
-function navierstokes_nonlinear!(u::FlowField, Ubase::ChebyCoeff, Wbase::ChebyCoeff, f::FlowField, tmp::FlowField, flags::DNSFlags)
+function navierstokes_nonlinear!(u::FlowField{Q}, Ubase::ChebyCoeff{R}, Wbase::ChebyCoeff{S}, f::FlowField{T}, tmp::FlowField{U}, tmp2::FlowField{V}, flags::DNSFlags) where {Q,R,S,T,U,V<:Number}
     finalstate = Spectral
     @assert xz_state(u) == Spectral "xz_state(u) should be Spectral in navierstokes_nonlinear"
     @assert y_state(u) == Spectral "y_state(u) should be Spectral in navierstokes_nonlinear"
@@ -386,7 +383,7 @@ function navierstokes_nonlinear!(u::FlowField, Ubase::ChebyCoeff, Wbase::ChebyCo
     u += Ubase
 
     if flags.nonlinearity == Rotational
-        rotational_nonlinear!(u, f, tmp, finalstate)
+        rotational_nonlinear!(u, f, tmp, tmp2, finalstate)
     elseif flags.nonlinearity == Convection
         convection_nonlinear!(u, f, tmp, finalstate)
     elseif flags.nonlinearity == SkewSymmetric
@@ -422,39 +419,59 @@ end
 
 Calculates the nonlinear terms of the Navier Stokes equations.
 """
-function nonlinear!(eqn::NSE, infields::Vector{<:FlowField}, outfields::Vector{<:FlowField}, flags::DNSFlags)
-    navierstokes_nonlinear!(infields[1], eqn.baseflow.Ubase, eqn.baseflow.Wbase, outfields[1], eqn.tmp.ff, flags)
+function nonlinear!(eqn::NSE, infields::Vector{<:FlowField{<:Number}}, outfields::Vector{<:FlowField{<:Number}}, flags::DNSFlags)
+    navierstokes_nonlinear!(infields[1], eqn.baseflow.Ubase, eqn.baseflow.Wbase, outfields[1], eqn.tmp.ff, eqn.tmp.ff2, flags)
     if dealias_xz(flags)
         zero_padded_modes!(outfields[1])
     end
+    return
 end
 
-function rotational_nonlinear!(u::FlowField, f::FlowField, tmp::FlowField, finalstate::FieldState)
+function rotational_nonlinear!(u::FlowField{Q}, f::FlowField{R}, tmp::FlowField{S}, tmp2::FlowField{U}, finalstate::FieldState) where {Q,R,S,U<:Number}
     @assert num_dimensions(u) == 3 "FlowField must have 3 dimensions for rotational nonlinearity"
-    u_xz_state = xz_state(u)
-    u_y_state = y_state(u)
     vort = tmp
+    uwork = tmp2
 
     if !geom_congruent(u, f) || num_dimensions(f) != 3
         resize!(f, u.domain.Nx, u.domain.Ny, u.domain.Nz, 3, u.domain.Lx, u.domain.Lz, u.domain.a, u.domain.b)
     end
-    make_state!(f, Physical, Physical)
+    # f is fully overwritten in physical space below, so skip an unnecessary
+    # spectral->physical transform when f currently holds spectral data.
+    f.xz_state = Physical
+    f.y_state = Physical
 
     if !geom_congruent(u, vort) || num_dimensions(vort) != 3
         resize!(vort, u.domain.Nx, u.domain.Ny, u.domain.Nz, 3, u.domain.Lx, u.domain.Lz, u.domain.a, u.domain.b)
     end
+    if !geom_congruent(u, uwork) || num_dimensions(uwork) != 3
+        resize!(uwork, u.domain.Nx, u.domain.Ny, u.domain.Nz, 3, u.domain.Lx, u.domain.Lz, u.domain.a, u.domain.b)
+    end
     make_spectral!(u)
+    uwork.xz_state = Spectral
+    uwork.y_state = Spectral
+    @inbounds uwork.spectral_data .= u.spectral_data
     curl!(u, vort)
 
-    make_physical!(u)
+    make_physical!(uwork)
     make_physical!(vort)
-    cross!(vort, u, f, finalstate)
+
+    # Compute f = vort x u directly in physical space to avoid extra state
+    # transitions and duplicate transforms inside cross!.
+    u_phys = uwork.physical_data
+    vort_phys = vort.physical_data
+    f_phys = f.physical_data
+    @inbounds for nz = 1:u.domain.Nz, ny = 1:u.domain.Ny, nx = 1:u.domain.Nx
+        # (vort x u)_x
+        f_phys[nx, ny, nz, 1] = vort_phys[nx, ny, nz, 2] * u_phys[nx, ny, nz, 3] - vort_phys[nx, ny, nz, 3] * u_phys[nx, ny, nz, 2]
+        # (vort x u)_y
+        f_phys[nx, ny, nz, 2] = vort_phys[nx, ny, nz, 3] * u_phys[nx, ny, nz, 1] - vort_phys[nx, ny, nz, 1] * u_phys[nx, ny, nz, 3]
+        # (vort x u)_z
+        f_phys[nx, ny, nz, 3] = vort_phys[nx, ny, nz, 1] * u_phys[nx, ny, nz, 2] - vort_phys[nx, ny, nz, 2] * u_phys[nx, ny, nz, 1]
+    end
 
     if finalstate == Spectral
         make_spectral!(f)
     end
-
-    make_state!(u, u_xz_state, u_y_state)
 
     return
 end
@@ -474,10 +491,10 @@ function linear!(eqn::NSE, infields::Vector{<:FlowField}, outfields::Vector{<:Fl
     Mz = u_field.domain.Mz
 
     for mx = 1:Mx
-        kx = mx_to_kx(u_field, mx)  # FIXED: correct function call
+        kx = eqn.spatial.kx_vals[mx]
 
         for mz = 1:Mz
-            kz = mz_to_kz(u_field, mz)  # FIXED: correct function call
+            kz = eqn.spatial.kz_vals[mz]
 
             # FIXED: Skip aliased modes, but continue to next iteration
             if (kx == kxmax || kz == kzmax) || (dealias_xz(flags) && is_aliased(u_field, kx, kz))
@@ -647,12 +664,45 @@ function linear!(eqn::NSE, infields::Vector{<:FlowField}, outfields::Vector{<:Fl
 end
 =#
 
-function solve!(eqn::NSE, outfields::Union{AbstractArray{FlowField},AbstractArray{FlowField{T}}}, rhs::AbstractArray{FlowField{T}}, s::Int, flags::DNSFlags) where {T<:Number}
-    # Method takes a right hand side {u} and solves for output fields {u,press}
+function solve!(eqn::NSE, outfields::Vector{FlowField{T}}, rhs::Vector{FlowField{T}}, s::Int, flags::DNSFlags) where {T<:Number}
     @assert length(outfields) == length(rhs) + 1 "Make sure user provides correct RHS which can be created outside NSE with create_RHS()"
+    _solve_nse!(eqn, outfields[1], outfields[2], rhs[1], s, flags)
+end
 
-    kxmax = kx_max(outfields[1])
-    kzmax = kz_max(outfields[1])
+function solve!(eqn::NSE, outfields::AbstractVector{<:FlowField}, rhs::AbstractVector{<:FlowField}, s::Int, flags::DNSFlags)
+    @assert length(outfields) == length(rhs) + 1 "Make sure user provides correct RHS which can be created outside NSE with create_RHS()"
+    _solve_nse!(eqn, outfields[1], outfields[2], rhs[1], s, flags)
+end
+
+function _solve_nse!(eqn::NSE, uout::FlowField{T}, pout::FlowField{T}, rhsu::FlowField{T}, s::Int, flags::DNSFlags) where {T<:Number}
+    @assert xz_state(uout) == Spectral && y_state(uout) == Spectral
+    @assert xz_state(pout) == Spectral && y_state(pout) == Spectral
+    @assert xz_state(rhsu) == Spectral && y_state(rhsu) == Spectral
+
+    kxmax = kx_max(uout)
+    kzmax = kz_max(uout)
+    nx_even = iseven(uout.domain.Nx)
+    nz_even = iseven(uout.domain.Nz)
+    u_spec = uout.spectral_data
+    p_spec = pout.spectral_data
+    rhs_spec = rhsu.spectral_data
+    ukd = eqn.tmp.uk.data
+    vkd = eqn.tmp.vk.data
+    wkd = eqn.tmp.wk.data
+    Pkd = eqn.tmp.Pk.data
+    Rukd = eqn.tmp.Ruk.data
+    Rvkd = eqn.tmp.Rvk.data
+    Rwkd = eqn.tmp.Rwk.data
+    uk_re = realview(eqn.tmp.uk)
+    uk_im = imagview(eqn.tmp.uk)
+    vk_re = realview(eqn.tmp.vk)
+    vk_im = imagview(eqn.tmp.vk)
+    wk_re = realview(eqn.tmp.wk)
+    wk_im = imagview(eqn.tmp.wk)
+    Pk_re = realview(eqn.tmp.Pk)
+    Pk_im = imagview(eqn.tmp.Pk)
+    Rvk_re = realview(eqn.tmp.Rvk)
+    Rvk_im = imagview(eqn.tmp.Rvk)
 
     # println("outfields[1] is:")
     # display(outfields[1])
@@ -661,47 +711,49 @@ function solve!(eqn::NSE, outfields::Union{AbstractArray{FlowField},AbstractArra
 
     # Update each Fourier mode with solution of the implicit problem
     # Since we're not using MPI, we loop over all modes directly
-    for mx = 1:eqn.spatial.Mx
-        kx = mx_to_kx(outfields[1], mx)
+    @inbounds for mx = 1:eqn.spatial.Mx
+        kx = eqn.spatial.kx_vals[mx]
 
         for mz = 1:eqn.spatial.Mz
-            kz = mz_to_kz(outfields[1], mz)
+            kz = eqn.spatial.kz_vals[mz]
 
-            # Skip last and aliased modes
-            if (kx == kxmax || kz == kzmax) || (dealias_xz(flags) && is_aliased(outfields[1], kx, kz))
-                break
+            # Skip Nyquist/aliased mode, but continue scanning the rest of kz.
+            if (kx == kxmax || kz == kzmax) || (dealias_xz(flags) && is_aliased(uout, kx, kz))
+                continue
             end
 
             # Construct ComplexChebyCoeff from RHS
             for ny = 1:eqn.spatial.Nyd
-                eqn.tmp.Ruk[ny] = cmplx(rhs[1], mx, ny, mz, 1)
-                eqn.tmp.Rvk[ny] = cmplx(rhs[1], mx, ny, mz, 2)
-                eqn.tmp.Rwk[ny] = cmplx(rhs[1], mx, ny, mz, 3)
+                Rukd[ny] = rhs_spec[mx, ny, mz, 1]
+                Rvkd[ny] = rhs_spec[mx, ny, mz, 2]
+                Rwkd[ny] = rhs_spec[mx, ny, mz, 3]
             end
 
             # Solve the tau equations
             if kx != 0 || kz != 0
                 solve!(eqn.tausolvers[s, mx, mz], eqn.tmp.uk, eqn.tmp.vk, eqn.tmp.wk, eqn.tmp.Pk,
-                    eqn.tmp.Ruk, eqn.tmp.Rvk, eqn.tmp.Rwk)
+                    eqn.tmp.Ruk, eqn.tmp.Rvk, eqn.tmp.Rwk,
+                    uk_re, uk_im, vk_re, vk_im, wk_re, wk_im, Pk_re, Pk_im, Rvk_re, Rvk_im)
             else  # kx,kz == 0,0
                 # LHS includes also the constant terms C which can be added to RHS
                 if length(eqn.baseflow.Ubase_yy.data) > 0
                     for ny = 1:eqn.spatial.Ny
-                        eqn.tmp.Ruk[ny] += flags.nu * eqn.baseflow.Ubase_yy[ny]  # Rx has addl'l term from Ubase
+                        Rukd[ny] += flags.nu * eqn.baseflow.Ubase_yy[ny]  # Rx has addl'l term from Ubase
                     end
                 end
                 if length(eqn.baseflow.Wbase_yy.data) > 0
                     for ny = 1:eqn.spatial.Ny
-                        eqn.tmp.Rwk[ny] += flags.nu * eqn.baseflow.Wbase_yy[ny]  # Rz has addl'l term from Wbase
+                        Rwkd[ny] += flags.nu * eqn.baseflow.Wbase_yy[ny]  # Rz has addl'l term from Wbase
                     end
                 end
 
                 if flags.constraint == PressureGradient
                     # pressure is supplied, put on RHS of tau eqn
-                    eqn.tmp.Ruk[1] -= Complex(eqn.baseflow.dPdx_Ref, 0)
-                    eqn.tmp.Rwk[1] -= Complex(eqn.baseflow.dPdz_Ref, 0)
+                    Rukd[1] -= Complex(eqn.baseflow.dPdx_Ref, 0)
+                    Rwkd[1] -= Complex(eqn.baseflow.dPdz_Ref, 0)
                     solve!(eqn.tausolvers[s, mx, mz], eqn.tmp.uk, eqn.tmp.vk, eqn.tmp.wk, eqn.tmp.Pk,
-                        eqn.tmp.Ruk, eqn.tmp.Rvk, eqn.tmp.Rwk)
+                        eqn.tmp.Ruk, eqn.tmp.Rvk, eqn.tmp.Rwk,
+                        uk_re, uk_im, vk_re, vk_im, wk_re, wk_im, Pk_re, Pk_im, Rvk_re, Rvk_im)
                     # Bulk vel is free variable determined from soln of tau eqn 
                     # TODO: write method that computes UbulkAct everytime it is needed
 
@@ -711,7 +763,7 @@ function solve!(eqn::NSE, outfields::Union{AbstractArray{FlowField},AbstractArra
                     # Use tausolver with additional variable and constraint:
                     # free variable: dPdxAct at next time-step,
                     # constraint:    UbulkBase + mean(u) = UbulkRef.
-                    solve!(eqn.tausolvers[s][mx][mz], eqn.tmp.uk, eqn.tmp.vk, eqn.tmp.wk, eqn.tmp.Pk,
+                    solve!(eqn.tausolvers[s, mx, mz], eqn.tmp.uk, eqn.tmp.vk, eqn.tmp.wk, eqn.tmp.Pk,
                         eqn.baseflow.dPdx_Act, eqn.baseflow.dPdz_Act, eqn.tmp.Ruk, eqn.tmp.Rvk, eqn.tmp.Rwk,
                         eqn.baseflow.Ubulk_Ref - eqn.baseflow.Ubulk_Base,
                         eqn.baseflow.Wbulk_Ref - eqn.baseflow.Wbulk_Base)
@@ -728,23 +780,23 @@ function solve!(eqn::NSE, outfields::Union{AbstractArray{FlowField},AbstractArra
             # For Nz even, the 0,kzmax mode must be real
             # For Nx,Nz even, the kxmax,kzmax mode must be real
             if ((kx == 0 && kz == 0) ||
-                (outfields[1].domain.Nx % 2 == 0 && kx == kxmax && kz == 0) ||
-                (outfields[1].domain.Nz % 2 == 0 && kz == kzmax && kx == 0) ||
-                (outfields[1].domain.Nx % 2 == 0 && outfields[1].domain.Nz % 2 == 0 && kx == kxmax && kz == kzmax))
+                (nx_even && kx == kxmax && kz == 0) ||
+                (nz_even && kz == kzmax && kx == 0) ||
+                (nx_even && nz_even && kx == kxmax && kz == kzmax))
 
                 for ny = 1:eqn.spatial.Nyd
-                    set_cmplx!(outfields[1], Complex(real(eqn.tmp.uk[ny]), 0.0), mx, ny, mz, 1)
-                    set_cmplx!(outfields[1], Complex(real(eqn.tmp.vk[ny]), 0.0), mx, ny, mz, 2)
-                    set_cmplx!(outfields[1], Complex(real(eqn.tmp.wk[ny]), 0.0), mx, ny, mz, 3)
-                    set_cmplx!(outfields[2], Complex(real(eqn.tmp.Pk[ny]), 0.0), mx, ny, mz, 1)
+                    u_spec[mx, ny, mz, 1] = Complex(real(ukd[ny]), 0.0)
+                    u_spec[mx, ny, mz, 2] = Complex(real(vkd[ny]), 0.0)
+                    u_spec[mx, ny, mz, 3] = Complex(real(wkd[ny]), 0.0)
+                    p_spec[mx, ny, mz, 1] = Complex(real(Pkd[ny]), 0.0)
                 end
             else
                 # The normal case, for general kx,kz
                 for ny = 1:eqn.spatial.Nyd
-                    set_cmplx!(outfields[1], eqn.tmp.uk[ny], mx, ny, mz, 1)
-                    set_cmplx!(outfields[1], eqn.tmp.vk[ny], mx, ny, mz, 2)
-                    set_cmplx!(outfields[1], eqn.tmp.wk[ny], mx, ny, mz, 3)
-                    set_cmplx!(outfields[2], eqn.tmp.Pk[ny], mx, ny, mz, 1)
+                    u_spec[mx, ny, mz, 1] = ukd[ny]
+                    u_spec[mx, ny, mz, 2] = vkd[ny]
+                    u_spec[mx, ny, mz, 3] = wkd[ny]
+                    p_spec[mx, ny, mz, 1] = Pkd[ny]
                 end
             end
         end

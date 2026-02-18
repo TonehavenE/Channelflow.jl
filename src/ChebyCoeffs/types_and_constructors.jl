@@ -56,15 +56,16 @@ Chebyshev polynomial expansion on interval [a, b].
 Can be in Physical (values at Chebyshev points) or Spectral (coefficients) state.
 Supports both real and complex coefficients.
 """
-mutable struct ChebyCoeff{T<:Number}
-    data::AbstractArray{T}
-    a::Real
-    b::Real
+mutable struct ChebyCoeff{T<:Number,A<:AbstractArray{T}}
+    data::A
+    a::Float64
+    b::Float64
     state::FieldState
 
     # Constructors
     function ChebyCoeff{T}() where {T<:Number}
-        new{T}(T[], 0.0, 0.0, Spectral)
+        data = T[]
+        new{T,typeof(data)}(data, 0.0, 0.0, Spectral)
     end
 
     function ChebyCoeff{T}(
@@ -74,22 +75,24 @@ mutable struct ChebyCoeff{T<:Number}
         state::FieldState = Spectral,
     ) where {T<:Number}
         @assert b > a "Upper bound must be greater than lower bound"
-        new{T}(zeros(T, N), Float64(a), Float64(b), state)
+        data = zeros(T, N)
+        new{T,typeof(data)}(data, Float64(a), Float64(b), state)
     end
 
     function ChebyCoeff{T}(
-        data::AbstractArray{<:Number},
+        data::AbstractArray{T},
         a::Real = -1,
         b::Real = 1,
         state::FieldState = Spectral,
     ) where {T<:Number}
         @assert b > a "Upper bound must be greater than lower bound"
-        new{T}(data, Float64(a), Float64(b), state)
+        new{T,typeof(data)}(data, Float64(a), Float64(b), state)
     end
 
     # Copy constructor with different size
     function ChebyCoeff{T}(N::Int, u::ChebyCoeff{T}) where {T<:Number}
-        result = new{T}(zeros(T, N), u.a, u.b, u.state)
+        data = zeros(T, N)
+        result = new{T,typeof(data)}(data, u.a, u.b, u.state)
         N_common = min(N, length(u.data))
         result.data[1:N_common] .= u.data[1:N_common]
         result

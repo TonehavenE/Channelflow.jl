@@ -13,30 +13,28 @@ Compute derivative of Chebyshev expansion in place.
 
 See "docs/Derivatives.md".
 """
-function derivative!(u::ChebyCoeff{<:Number}, dudx_result::ChebyCoeff{<:Number})
-    @assert u.state == Spectral "Must be in Spectral (Chebyshev coefficient) state."
-    @assert dudx_result.state == Spectral "Must be in Spectral (Chebyshev coefficient) state."
+function derivative!(u::ChebyCoeff{T,AU}, dudx_result::ChebyCoeff{T,AV}) where {T<:Number,AU<:AbstractArray{T},AV<:AbstractArray{T}}
+    @assert u.state == Spectral
+    @assert dudx_result.state == Spectral
     N = length(u.data)
-    @assert length(dudx_result.data) == N "Input and output must have same length"
+    @assert length(dudx_result.data) == N
 
-    # Nothing to do for constants
+    zeroT = zero(T)
+
     if N <= 1
-        fill!(dudx_result.data, zero(eltype(u.data)))
+        fill!(dudx_result.data, zeroT)
         return dudx_result
     end
 
-    # Scale factor for converting derivative coefficients to the domain [a, b]
     scale = 4.0 / domain_length(u)
 
-    # Initialize top of recurrence
-    dudx_result.data[N] = zero(eltype(u.data)) # input is nth degree, output is n-1; highest mode always zero
-    if N >= 2
-        dudx_result.data[N-1] = scale * (N - 1) * u.data[N]
-    end
+    # highest modes
+    dudx_result.data[N] = zeroT
+    dudx_result.data[N-1] = scale * (N - 1) * u.data[N]
 
-    # backward recurrence: b_n = b_{n+2} + scale * n * a_{n + 1}
-    for n = N-2:-1:1
-        dudx_result.data[n] = dudx_result.data[n+2] + scale * n * u.data[n+1]
+    # backward recurrence
+    @inbounds @simd for n = N-2:-1:1
+        dudx_result.data[n] = dudx_result.data[n+2] + (n * scale) * u.data[n+1]
     end
 
     # first coefficient correction
@@ -68,14 +66,14 @@ function derivative(u::ChebyCoeff{T}) where {T<:Number}
 end
 
 """Compute second derivative in place"""
-function derivative2!(u::ChebyCoeff{<:Number}, dudx::ChebyCoeff{<:Number}, d2udx2::ChebyCoeff{<:Number})
+function derivative2!(u::ChebyCoeff{T,AU}, dudx::ChebyCoeff{T,AV}, d2udx2::ChebyCoeff{T,AW}) where {T<:Number,AU<:AbstractArray{T},AV<:AbstractArray{T},AW<:AbstractArray{T}}
     derivative!(u, dudx)
     derivative!(dudx, d2udx2)
     return d2udx2
 end
 
 """Compute second derivative, storing result in second argument in place"""
-function derivative2!(u::ChebyCoeff{<:Number}, dudx2_result::ChebyCoeff{<:Number})
+function derivative2!(u::ChebyCoeff{T,AU}, dudx2_result::ChebyCoeff{T,AV}) where {T<:Number,AU<:AbstractArray{T},AV<:AbstractArray{T}}
     dudx = ChebyCoeff{eltype(u.data)}(length(u.data), u.a, u.b, Spectral)
     derivative2!(u, dudx, dudx2_result)
     return dudx2_result
@@ -87,7 +85,7 @@ function derivative2(u::ChebyCoeff{T}) where {T<:Number}
 end
 
 
-function derivative!(u::ChebyCoeff{<:Number}, du::ChebyCoeff{<:Number}, n::Int)
+function derivative!(u::ChebyCoeff{T,AU}, du::ChebyCoeff{T,AV}, n::Int) where {T<:Number,AU<:AbstractArray{T},AV<:AbstractArray{T}}
     @assert n >= 0 "Derivative order must be non-negative"
     du = u
     temp = ChebyCoeff{T}(length(u.data), u.a, u.b, Spectral)
@@ -106,12 +104,12 @@ function derivative(u::ChebyCoeff{T}, n::Int) where {T<:Number}
 end
 
 """Integrate Chebyshev expansion, with the result being modified in place."""
-function integrate!(dudy::ChebyCoeff{<:Number}, result::ChebyCoeff{<:Number})
+function integrate!(dudy::ChebyCoeff{T,AU}, result::ChebyCoeff{T,AV}) where {T<:Number,AU<:AbstractArray{T},AV<:AbstractArray{T}}
     @assert dudy.state == Spectral "Must be in Spectral state"
     N = length(dudy.data)
 
     if N == 0
-        fill!(result.data, zero(eltype(u.data))),
+        fill!(result.data, zero(T)),
         return nothing
     elseif N == 1
         result.data[1] = zero(T)

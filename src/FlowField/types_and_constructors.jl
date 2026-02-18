@@ -15,8 +15,8 @@ mutable struct FlowField{T<:Real}
     padded::Bool  # Flag for dealiasing
 
     # Separate storage for physical and spectral data
-    physical_data::Union{Array{T,4},Nothing}          # [Nx, Ny, Nz, num_dimensions]
-    spectral_data::Union{Array{Complex{T},4},Nothing}  # [Mx, My, Mz, num_dimensions]
+    physical_data::Array{T,4}          # [Nx, Ny, Nz, num_dimensions]
+    spectral_data::Array{Complex{T},4}  # [Mx, My, Mz, num_dimensions]
 
     transforms::FlowFieldTransforms{T}
 end
@@ -44,14 +44,8 @@ function FlowField(
     domain = FlowFieldDomain(Nx, Ny, Nz, tensor_shape, Lx, Lz, a, b)
 
     # Allocate data based on state
-    physical_data = nothing
-    spectral_data = nothing
-
-    if xz_state == Physical
-        physical_data = zeros(T, domain.Nx, domain.Ny, domain.Nz, domain.num_dimensions)
-    else
-        spectral_data = zeros(Complex{T}, domain.Mx, domain.My, domain.Mz, domain.num_dimensions)
-    end
+    physical_data = zeros(T, domain.Nx, domain.Ny, domain.Nz, domain.num_dimensions)
+    spectral_data = zeros(Complex{T}, domain.Mx, domain.My, domain.Mz, domain.num_dimensions)
 
     transforms = FlowFieldTransforms(domain)
 
@@ -95,15 +89,9 @@ function FlowField(
     y_state::FieldState=Spectral,
 ) where {T}
 
-    physical_data = nothing
-    spectral_data = nothing
-
-    if xz_state == Physical
-        physical_data = zeros(T, domain.Nx, domain.Ny, domain.Nz, domain.num_dimensions)
-    else
-        spectral_data =
-            zeros(Complex{T}, domain.Mx, domain.My, domain.Mz, domain.num_dimensions)
-    end
+    physical_data = zeros(T, domain.Nx, domain.Ny, domain.Nz, domain.num_dimensions)
+    spectral_data =
+        zeros(Complex{T}, domain.Mx, domain.My, domain.Mz, domain.num_dimensions)
 
     transforms = FlowFieldTransforms(domain)
 
@@ -124,8 +112,8 @@ end
 Copy constructor - creates deep copy of data but shares FFTW plans.
 """
 function FlowField(other::FlowField{T}) where {T}
-    physical_data = other.physical_data === nothing ? nothing : copy(other.physical_data)
-    spectral_data = other.spectral_data === nothing ? nothing : copy(other.spectral_data)
+    physical_data = copy(other.physical_data)
+    spectral_data = copy(other.spectral_data)
 
     return FlowField{T}(
         other.domain,
@@ -163,7 +151,7 @@ end
 """
 Get reference to current active data array.
 """
-function _current_data(ff::FlowField)
+function _current_data(ff::FlowField{T}) where {T}
     if ff.xz_state == Physical
         return ff.physical_data
     else

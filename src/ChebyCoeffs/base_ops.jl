@@ -15,8 +15,8 @@ end
 # Basic properties
 Base.length(u::ChebyCoeff) = length(u.data)
 Base.size(u::ChebyCoeff) = size(u.data)
-Base.getindex(u::ChebyCoeff, i) = u.data[i]
-Base.setindex!(u::ChebyCoeff, val, i) = (u.data[i] = val)
+@inline Base.getindex(u::ChebyCoeff{T}, i::Int) where {T} = (@inbounds u.data[i]::T)
+@inline Base.setindex!(u::ChebyCoeff{T}, val, i::Int) where {T} = (@inbounds u.data[i] = convert(T, val))
 Base.eltype(::ChebyCoeff{T}) where {T} = T
 
 # Domain properties

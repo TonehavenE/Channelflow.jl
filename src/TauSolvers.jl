@@ -39,32 +39,37 @@ mutable struct TauSolver
     num_modes::Int
     kx::Int # x wave number 
     kz::Int # z wave number
-    a::Real # a domain limit
-    b::Real # b domain limit
-    lambda::Real # lambda in the equation
-    nu::Real # nu in the equation
+    a::Float64 # a domain limit
+    b::Float64 # b domain limit
+    lambda::Float64 # lambda in the equation
+    nu::Float64 # nu in the equation
     tau_correction::Bool # whether or not to eliminate tau errors
     pressure_helmholtz::HelmholtzProblem
     velocity_helmholtz::HelmholtzProblem
 
-    P_0::ChebyCoeff
-    v_0::ChebyCoeff
-    P_plus::ChebyCoeff
-    v_plus::ChebyCoeff
-    P_minus::ChebyCoeff
-    v_minus::ChebyCoeff
+    P_0::ChebyCoeff{Float64,Vector{Float64}}
+    v_0::ChebyCoeff{Float64,Vector{Float64}}
+    P_plus::ChebyCoeff{Float64,Vector{Float64}}
+    v_plus::ChebyCoeff{Float64,Vector{Float64}}
+    P_minus::ChebyCoeff{Float64,Vector{Float64}}
+    v_minus::ChebyCoeff{Float64,Vector{Float64}}
 
     # Convenience variables
-    two_pi_kxLx::Real # 2 pi kx/Lx
-    two_pi_kzLz::Real # 2 pi kz/Lz
-    kappa2::Real # 4 pi^2 [(kx/Lx)^2 + (kz/Lz)^2]
-    i00::Real
-    i01::Real
-    i10::Real
-    i11::Real
+    two_pi_kxLx::Float64 # 2 pi kx/Lx
+    two_pi_kzLz::Float64 # 2 pi kz/Lz
+    kappa2::Float64 # 4 pi^2 [(kx/Lx)^2 + (kz/Lz)^2]
+    i00::Float64
+    i01::Float64
+    i10::Float64
+    i11::Float64
 
-    sigma0_N1::Real
-    sigma0_N::Real
+    sigma0_N1::Float64
+    sigma0_N::Float64
+    work_r::ChebyCoeff{Float64,Vector{Float64}}
+    work_r2::ChebyCoeff{Float64,Vector{Float64}}
+    work_c::ChebyCoeff{ComplexF64,Vector{ComplexF64}}
+    work_c_re::ChebyCoeff{Float64}
+    work_c_im::ChebyCoeff{Float64}
 
     function TauSolver(kx::Int, kz::Int, Lx::Real, Lz::Real, a::Real, b::Real, lambda::Real, nu::Real, num_modes::Int, tau_correction::Bool)
         N = num_modes
@@ -124,14 +129,18 @@ mutable struct TauSolver
         solve!(velocity_helmholtz, v_0, dP0_dy, 0.0, 0.0)
 
 
+        work_c = ChebyCoeff{ComplexF64}(N, a, b, Spectral)
+        work_c_re = realview(work_c)
+        work_c_im = imagview(work_c)
+
         this = new(
             num_modes,
             kx,
             kz,
-            a,
-            b,
-            lambda,
-            nu,
+            Float64(a),
+            Float64(b),
+            Float64(lambda),
+            Float64(nu),
             tau_correction,
             pressure_helmholtz,
             velocity_helmholtz,
@@ -149,7 +158,12 @@ mutable struct TauSolver
             i10,
             i11,
             0,
-            0
+            0,
+            ChebyCoeff(N, a, b, Spectral),
+            ChebyCoeff(N, a, b, Spectral),
+            work_c,
+            work_c_re,
+            work_c_im,
         )
 
         influence_correction!(this, this.P_0, this.v_0)
@@ -183,77 +197,96 @@ function TauSolver()
     )
 end
 
-function influence_correction!(tau::TauSolver, P::ChebyCoeff, v::ChebyCoeff)
-    tmp = derivative(v)
+function influence_correction!(tau::TauSolver, P::ChebyCoeff{Float64,AP}, v::ChebyCoeff{Float64,AV}) where {AP<:AbstractArray{Float64},AV<:AbstractArray{Float64}}
+    return influence_correction!(tau, P, v, tau.work_r2)
+end
+
+function influence_correction!(tau::TauSolver, P::ChebyCoeff{Float64,AP}, v::ChebyCoeff{Float64,AV}, tmp::ChebyCoeff{Float64,AT}) where {AP<:AbstractArray{Float64},AV<:AbstractArray{Float64},AT<:AbstractArray{Float64}}
+    derivative!(v, tmp)
     dvp_dy_plus = eval_b(tmp)
     dvp_dy_minus = eval_a(tmp)
     delta_plus = -tau.i00 * dvp_dy_plus - tau.i01 * dvp_dy_minus
     delta_minus = -tau.i10 * dvp_dy_plus - tau.i11 * dvp_dy_minus
 
-    for i = 1:tau.num_modes
-        P[i] += delta_plus * tau.P_plus[i] + delta_minus * tau.P_minus[i]
-        v[i] += delta_plus * tau.v_plus[i] + delta_minus * tau.v_minus[i]
+    Pd = P.data
+    vd = v.data
+    Ppd = tau.P_plus.data
+    Pmd = tau.P_minus.data
+    vpd = tau.v_plus.data
+    vmd = tau.v_minus.data
+    @inbounds for i = 1:tau.num_modes
+        Pd[i] += delta_plus * Ppd[i] + delta_minus * Pmd[i]
+        vd[i] += delta_plus * vpd[i] + delta_minus * vmd[i]
     end
 end
 function solve_P_and_v!(
     tau::TauSolver,
-    P::ChebyCoeff,
-    v::ChebyCoeff,
-    r::ChebyCoeff,
-    Ry::ChebyCoeff,
-)
+    P::ChebyCoeff{Float64,AP},
+    v::ChebyCoeff{Float64,AV},
+    r::ChebyCoeff{Float64,AR},
+    Ry::ChebyCoeff{Float64,AY},
+) where {AP<:AbstractArray{Float64},AV<:AbstractArray{Float64},AR<:AbstractArray{Float64},AY<:AbstractArray{Float64}}
+
     # Solve pressure Helmholtz: P'' - kappa^2 P = r, with Dirichlet BCs
     solve!(tau.pressure_helmholtz, P, r, 0.0, 0.0)
 
     # Degenerate case: kx == 0 && kz == 0
     if tau.kx == 0 && tau.kz == 0
-        for i = 1:tau.num_modes
-            v[i] = 0.0
-        end
+        fill!(v.data, 0.0)
         return
     end
 
     # General case
-    tmp = derivative(P)
-    tmp -= Ry
+    tmp = tau.work_r
+    tmp2 = tau.work_r2
+    derivative!(P, tmp)
+    tmpd = tmp.data
+    Ryd = Ry.data
+    @inbounds for i = 1:tau.num_modes
+        tmpd[i] -= Ryd[i]
+    end
 
     # Solve velocity Helmholtz: nu*v'' - lambda*v = tmp, with Dirichlet BCs
     solve!(tau.velocity_helmholtz, v, tmp, 0.0, 0.0)
 
-    influence_correction!(tau, P, v)
+    influence_correction!(tau, P, v, tmp2)
 
     if !tau.tau_correction
         return
     end
 
     # Tau correction code follows
-    derivative2!(v, tmp)
+    derivative2!(v, tmp2, tmp)
 
     # sigma1_Nb and sigma1_Nb1 (Canuto & Hussaini notation)
     N = tau.num_modes
     λ = tau.lambda
     ν = tau.nu
 
-    sigma1_N = λ * v[N] - ν * tmp[N] - Ry[N]
-    sigma1_N1 = λ * v[N-1] - ν * tmp[N-1] - Ry[N-1]
+    vd = v.data
+    sigma1_N = λ * vd[N] - ν * tmpd[N] - Ryd[N]
+    sigma1_N1 = λ * vd[N-1] - ν * tmpd[N-1] - Ryd[N-1]
 
     derivative!(P, tmp)
 
-    sigma1_N += tmp[N]
-    sigma1_N1 += tmp[N-1]
+    sigma1_N += tmpd[N]
+    sigma1_N1 += tmpd[N-1]
 
     # sigma0_Nb and sigma0_Nb1 are precomputed in tau
     sigma_N = sigma1_N / (1.0 - tau.sigma0_N)
     sigma_N1 = sigma1_N1 / (1.0 - tau.sigma0_N1)
 
     # Apply tau correction to P and v
-    for i = 1:tau.num_modes
+    Pd = P.data
+    P0d = tau.P_0.data
+    v0d = tau.v_0.data
+    @inbounds for i = 1:tau.num_modes
         if iseven(i - 1)
-            P[i] += sigma_N1 * tau.P_0[i]
-            v[i] += sigma_N * tau.v_0[i]
+            Pd[i] += sigma_N1 * P0d[i]
+            vd[i] += sigma_N * v0d[i]
         else
-            P[i] += sigma_N * tau.P_0[i]
-            v[i] += sigma_N1 * tau.v_0[i]
+            Pd[i] += sigma_N * P0d[i]
+            vd[i] += sigma_N1 * v0d[i]
         end
     end
 
@@ -265,37 +298,96 @@ end
 
 Solve the Tau equations for the given fields and return the solution.
 """
-function solve!(tau::TauSolver, u::ChebyCoeff, v::ChebyCoeff, w::ChebyCoeff, P::ChebyCoeff, Rx::ChebyCoeff, Ry::ChebyCoeff, Rz::ChebyCoeff)
+function solve!(
+    tau::TauSolver,
+    u::ChebyCoeff{ComplexF64,AU},
+    v::ChebyCoeff{ComplexF64,AV},
+    w::ChebyCoeff{ComplexF64,AW},
+    P::ChebyCoeff{ComplexF64,AP},
+    Rx::ChebyCoeff{ComplexF64,ARX},
+    Ry::ChebyCoeff{ComplexF64,ARY},
+    Rz::ChebyCoeff{ComplexF64,ARZ},
+) where {AU<:AbstractArray{ComplexF64},AV<:AbstractArray{ComplexF64},AW<:AbstractArray{ComplexF64},AP<:AbstractArray{ComplexF64},ARX<:AbstractArray{ComplexF64},ARY<:AbstractArray{ComplexF64},ARZ<:AbstractArray{ComplexF64}}
+    return solve!(
+        tau,
+        u,
+        v,
+        w,
+        P,
+        Rx,
+        Ry,
+        Rz,
+        realview(u),
+        imagview(u),
+        realview(v),
+        imagview(v),
+        realview(w),
+        imagview(w),
+        realview(P),
+        imagview(P),
+        realview(Ry),
+        imagview(Ry),
+    )
+end
+
+function solve!(
+    tau::TauSolver,
+    u::ChebyCoeff{ComplexF64,AU},
+    v::ChebyCoeff{ComplexF64,AV},
+    w::ChebyCoeff{ComplexF64,AW},
+    P::ChebyCoeff{ComplexF64,AP},
+    Rx::ChebyCoeff{ComplexF64,ARX},
+    Ry::ChebyCoeff{ComplexF64,ARY},
+    Rz::ChebyCoeff{ComplexF64,ARZ},
+    u_re::ChebyCoeff{Float64,AUR},
+    u_im::ChebyCoeff{Float64,AUI},
+    v_re::ChebyCoeff{Float64,AVR},
+    v_im::ChebyCoeff{Float64,AVI},
+    w_re::ChebyCoeff{Float64,AWR},
+    w_im::ChebyCoeff{Float64,AWI},
+    P_re::ChebyCoeff{Float64,APR},
+    P_im::ChebyCoeff{Float64,API},
+    Ry_re::ChebyCoeff{Float64,ARYR},
+    Ry_im::ChebyCoeff{Float64,ARYI},
+) where {AU<:AbstractArray{ComplexF64},AV<:AbstractArray{ComplexF64},AW<:AbstractArray{ComplexF64},AP<:AbstractArray{ComplexF64},ARX<:AbstractArray{ComplexF64},ARY<:AbstractArray{ComplexF64},ARZ<:AbstractArray{ComplexF64},AUR<:AbstractArray{Float64},AUI<:AbstractArray{Float64},AVR<:AbstractArray{Float64},AVI<:AbstractArray{Float64},AWR<:AbstractArray{Float64},AWI<:AbstractArray{Float64},APR<:AbstractArray{Float64},API<:AbstractArray{Float64},ARYR<:AbstractArray{Float64},ARYI<:AbstractArray{Float64}}
     N = tau.num_modes
+    r_re = tau.work_c_re
+    r_im = tau.work_c_im
 
     # Decouple: solve real
-    rr = derivative(realview(Ry))
-    for n = 1:N
-        rr[n] -= tau.two_pi_kxLx * imag(Rx[n]) + tau.two_pi_kzLz * imag(Rz[n])
+    rr = tau.work_r
+    rrd = rr.data
+    Rxd = Rx.data
+    Rzd = Rz.data
+    derivative!(Ry_re, rr)
+    @inbounds for n = 1:N
+        rrd[n] -= tau.two_pi_kxLx * imag(Rxd[n]) + tau.two_pi_kzLz * imag(Rzd[n])
     end
-    solve_P_and_v!(tau, realview(P), realview(v), rr, realview(Ry))
+    solve_P_and_v!(tau, P_re, v_re, rr, Ry_re)
 
     # Solve imaginary
-    derivative!(imagview(Ry), rr)
-    for n = 1:N
-        rr[n] += tau.two_pi_kxLx * real(Rx[n]) + tau.two_pi_kzLz * real(Rz[n])
+    derivative!(Ry_im, rr)
+    @inbounds for n = 1:N
+        rrd[n] += tau.two_pi_kxLx * real(Rxd[n]) + tau.two_pi_kzLz * real(Rzd[n])
     end
-    solve_P_and_v!(tau, imagview(P), imagview(v), rr, imagview(Ry))
+    solve_P_and_v!(tau, P_im, v_im, rr, Ry_im)
 
     # Again, solve real and imaginary parts of u and w eqns separately
-    r = ChebyCoeff{ComplexF64}(N, tau.a, tau.b, Spectral)
-    for n = 1:N
-        r[n] = tau.two_pi_kxLx * im * P[n] - Rx[n]
+    r = tau.work_c
+    rd = r.data
+    Pd = P.data
+    @inbounds for n = 1:N
+        rd[n] = tau.two_pi_kxLx * im * Pd[n] - Rxd[n]
     end
 
-    solve!(tau.velocity_helmholtz, realview(u), realview(r), 0.0, 0.0)
-    solve!(tau.velocity_helmholtz, imagview(u), imagview(r), 0.0, 0.0)
+    solve!(tau.velocity_helmholtz, u_re, r_re, 0.0, 0.0)
+    solve!(tau.velocity_helmholtz, u_im, r_im, 0.0, 0.0)
 
-    for n = 1:N
-        r[n] = tau.two_pi_kzLz * im * P[n] - Rz[n]
+    @inbounds for n = 1:N
+        rd[n] = tau.two_pi_kzLz * im * Pd[n] - Rzd[n]
     end
-    solve!(tau.velocity_helmholtz, realview(w), realview(r), 0.0, 0.0)
-    solve!(tau.velocity_helmholtz, imagview(w), imagview(r), 0.0, 0.0)
+    solve!(tau.velocity_helmholtz, w_re, r_re, 0.0, 0.0)
+    solve!(tau.velocity_helmholtz, w_im, r_im, 0.0, 0.0)
 
     return
 end
@@ -306,39 +398,67 @@ end
 Solves the Tau equations for the given fields with a mean flow.
 tau.kx and tau.kz must be zero for this method.
 """
-function solve!(tau::TauSolver, u::ChebyCoeff, v::ChebyCoeff, w::ChebyCoeff, P::ChebyCoeff, Rx::ChebyCoeff, Ry::ChebyCoeff, Rz::ChebyCoeff, umean::Real)
+function solve!(
+    tau::TauSolver,
+    u::ChebyCoeff{ComplexF64,AU},
+    v::ChebyCoeff{ComplexF64,AV},
+    w::ChebyCoeff{ComplexF64,AW},
+    P::ChebyCoeff{ComplexF64,AP},
+    Rx::ChebyCoeff{ComplexF64,ARX},
+    Ry::ChebyCoeff{ComplexF64,ARY},
+    Rz::ChebyCoeff{ComplexF64,ARZ},
+    umean::Real,
+) where {AU<:AbstractArray{ComplexF64},AV<:AbstractArray{ComplexF64},AW<:AbstractArray{ComplexF64},AP<:AbstractArray{ComplexF64},ARX<:AbstractArray{ComplexF64},ARY<:AbstractArray{ComplexF64},ARZ<:AbstractArray{ComplexF64}}
     @assert tau.kx == 0 && tau.kz == 0 "This method is only for kx = 0 and kz = 0"
 
     N = tau.num_modes
+    Ry_re = realview(Ry)
+    Ry_im = imagview(Ry)
+    P_re = realview(P)
+    P_im = imagview(P)
+    v_re = realview(v)
+    v_im = imagview(v)
+    u_re = realview(u)
+    u_im = imagview(u)
+    w_re = realview(w)
+    w_im = imagview(w)
+    r_re = tau.work_c_re
+    r_im = tau.work_c_im
 
     # Decouple: solve real
-    rr = derivative(realview(Ry))
-    for n = 1:N
-        rr[n] -= tau.two_pi_kxLx * imag(Rx[n]) + tau.two_pi_kzLz * imag(Rz[n])
+    rr = tau.work_r
+    rrd = rr.data
+    Rxd = Rx.data
+    Rzd = Rz.data
+    derivative!(Ry_re, rr)
+    @inbounds for n = 1:N
+        rrd[n] -= tau.two_pi_kxLx * imag(Rxd[n]) + tau.two_pi_kzLz * imag(Rzd[n])
     end
-    solve_P_and_v!(tau, realview(P), realview(v), rr, realview(Ry))
+    solve_P_and_v!(tau, P_re, v_re, rr, Ry_re)
 
     # Solve imaginary
-    derivative!(imagview(Ry), rr)
-    for n = 1:N
-        rr[n] += tau.two_pi_kxLx * real(Rx[n]) + tau.two_pi_kzLz * real(Rz[n])
+    derivative!(Ry_im, rr)
+    @inbounds for n = 1:N
+        rrd[n] += tau.two_pi_kxLx * real(Rxd[n]) + tau.two_pi_kzLz * real(Rzd[n])
     end
-    solve_P_and_v!(tau, imagview(P), imagview(v), rr, imagview(Ry))
+    solve_P_and_v!(tau, P_im, v_im, rr, Ry_im)
 
     # Again, solve real and imaginary parts of u and w eqns separately
-    r = ChebyCoeff{ComplexF64}(N, tau.a, tau.b, Spectral)
-    for n = 1:N
-        r[n] = tau.two_pi_kxLx * im * P[n] - Rx[n]
+    r = tau.work_c
+    rd = r.data
+    Pd = P.data
+    @inbounds for n = 1:N
+        rd[n] = tau.two_pi_kxLx * im * Pd[n] - Rxd[n]
     end
 
-    solve!(tau.velocity_helmholtz, realview(u), realview(r), umean, 0.0, 0.0)
-    solve!(tau.velocity_helmholtz, imagview(u), imagview(r), 0.0, 0.0)
+    solve!(tau.velocity_helmholtz, u_re, r_re, umean, 0.0, 0.0)
+    solve!(tau.velocity_helmholtz, u_im, r_im, 0.0, 0.0)
 
-    for n = 1:N
-        r[n] = tau.two_pi_kzLz * P[n] - Rz[n]
+    @inbounds for n = 1:N
+        rd[n] = tau.two_pi_kzLz * Pd[n] - Rzd[n]
     end
-    solve!(tau.velocity_helmholtz, realview(w), realview(r), 0.0, 0.0)
-    solve!(tau.velocity_helmholtz, imagview(w), imagview(r), 0.0, 0.0)
+    solve!(tau.velocity_helmholtz, w_re, r_re, 0.0, 0.0)
+    solve!(tau.velocity_helmholtz, w_im, r_im, 0.0, 0.0)
 
     return
 end
@@ -566,4 +686,3 @@ function verify(tau::TauSolver, u::ChebyCoeff{ComplexF64}, v::ChebyCoeff{Complex
 end
 
 end
-

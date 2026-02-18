@@ -21,7 +21,7 @@ function eq7_continuation()
         nu=nu,
         dPdx=0.0, # No pressure gradient (no forcing)
         constraint=PressureGradient,
-        baseflow=ParabolicBase,
+        baseflow=LinearBase,
         timestepping=CNRK2,
         dt=dt,
         T=0.1 # Total simulation time
@@ -47,6 +47,10 @@ function eq7_continuation()
 
     # 3. RUN THE TIME-STEPPING LOOP
     # num_steps = round(Int, flags.T / flags.dt)
+    #
+    rhs = create_RHS(dns.common.equations, fields)
+    linear_terms = [FlowField(f) for f in rhs] # Linear terms
+
     num_steps = 10
     for n in 0:(num_steps-1)
         t = n * dt
@@ -64,7 +68,7 @@ function eq7_continuation()
         end
 
         # Advance the simulation by one time step
-        advance!(dns, fields, 1)
+        advance!(dns, fields, 1, rhs, linear_terms)
     end
 
     println("\nSimulation finished.")

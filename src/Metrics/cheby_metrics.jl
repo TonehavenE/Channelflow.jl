@@ -8,29 +8,40 @@ using ..ChebyCoeffs
 # Norm and Inner Product Functions - unified for real and complex
 # ============================================================================
 
-"""L2 norm squared"""
-function L2Norm2(u::ChebyCoeff{T}, normalize::Bool=true) where {T<:Real}
+const _factors_cache = Dict{Tuple{Int,DataType},Any}()
+
+function get_factors(N::Int, ::Type{T}) where {T}
+    key = (N, T)
+    get!(_factors_cache, key) do
+        F = Matrix{T}(undef, N, N)
+        @inbounds for m in 1:N, n in 1:N
+            mm, nn = m - 1, n - 1
+            denom = (1 + mm - nn) * (1 - mm + nn) * (1 + mm + nn) * (1 - mm - nn)
+            F[m, n] = (1 - mm^2 - nn^2) / denom
+        end
+        F
+    end
+end
+
+function L2Norm2(u::ChebyCoeff{T}, normalize::Bool=true)::T where {T<:Real}
     @assert u.state == Spectral "Must be in Spectral state"
     N = length(u.data)
-    sum_val = zero(real(T))
+    data = u.data
+    factors = get_factors(N, T)
 
-    for m = N:-1:1
+    sum_val = zero(T)
+    @inbounds for m in N:-1:1
+        startn = isodd(m) ? 1 : 2
         psum = zero(T)
-        for n = (m % 2 == 1 ? 1 : 2):2:N
-            factor =
-                (1 - (m - 1)^2 - (n - 1)^2) / (
-                    (1 + (m - 1) - (n - 1)) *
-                    (1 - (m - 1) + (n - 1)) *
-                    (1 + (m - 1) + (n - 1)) *
-                    (1 - (m - 1) - (n - 1))
-                )
-            psum += u.data[n] * factor
+        @simd for n in startn:2:N
+            psum += data[n] * factors[m, n]
         end
-        sum_val += u.data[m] * psum
+        sum_val += data[m] * psum
     end
 
     return normalize ? sum_val : sum_val * domain_length(u)
 end
+
 
 function L2Norm2(u::ChebyCoeff{T}, normalize::Bool=true) where {T<:Complex}
     return L2Norm2(real(u), normalize) + L2Norm2(imag(u), normalize)
