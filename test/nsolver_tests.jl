@@ -62,3 +62,13 @@ end
         @test isapprox(p.x[1], sqrt(p.μ), atol = 1e-5)
     end
 end
+
+@testset "NSolver backend selection" begin
+    dsi = FunctionDSI(x -> [x[1]^2 - 2.0])
+    if !gpu_backend_available()
+        alg = NewtonAlgorithm(NewtonSearchFlags(backend = :gpu))
+        @test_throws ArgumentError Channelflow.NSolver.solve(alg, dsi, [1.0])
+    end
+    bad_backend = NewtonAlgorithm(NewtonSearchFlags(backend = :invalid))
+    @test_throws ArgumentError Channelflow.NSolver.solve(bad_backend, dsi, [1.0])
+end

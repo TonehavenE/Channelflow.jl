@@ -7,7 +7,8 @@ export AbstractDSI, FunctionDSI, eval_dsi, jacobian_action,
        GMRES, FGMRES, BiCGStab,
        iterate!, test_vector, solution, residual, step1!, step2!, step3!,
        NewtonSearchFlags, NewtonAlgorithm, solve,
-       ContinuationFlags, ContinuationPoint, continue_branch
+       ContinuationFlags, ContinuationPoint, continue_branch,
+       gpu_backend_available
 
 abstract type AbstractDSI end
 
@@ -37,6 +38,56 @@ end
 parameter(dsi::ParamDSI) = dsi.μ
 update_parameter!(dsi::ParamDSI, μ) = (dsi.μ = μ)
 
+const _gpu_backend_available = Ref(false)
+const _to_gpu_vector = Ref{Function}(x -> throw(ArgumentError("CUDA backend unavailable. Load CUDA.jl and the Channelflow CUDA extension.")))
+const _sync_gpu = Ref{Function}(() -> nothing)
+
+gpu_backend_available() = _gpu_backend_available[]
+
+function register_gpu_backend!(; to_gpu::Function, synchronize::Function = () -> nothing)
+    _to_gpu_vector[] = to_gpu
+    _sync_gpu[] = synchronize
+    _gpu_backend_available[] = true
+    return nothing
+end
+
+function _zeros_like(template::AbstractVector{T}, n::Int) where {T}
+    out = similar(template, T, n)
+    fill!(out, zero(T))
+    return out
+end
+
+function _zeros_like(template::AbstractVector{T}, m::Int, n::Int) where {T}
+    out = similar(template, T, m, n)
+    fill!(out, zero(T))
+    return out
+end
+
+function _zeros_like(template::AbstractMatrix{T}, m::Int, n::Int) where {T}
+    out = similar(template, T, m, n)
+    fill!(out, zero(T))
+    return out
+end
+
+function _vector_like(v::AbstractVector, template::AbstractVector{T}) where {T}
+    if typeof(v) === typeof(template)
+        return v
+    end
+    out = similar(template, T, length(v))
+    out .= v
+    return out
+end
+
+function _copy_to_backend(x::AbstractVector, backend::Symbol)
+    if backend === :cpu
+        return collect(x)
+    elseif backend === :gpu
+        gpu_backend_available() || throw(ArgumentError("NewtonSearchFlags.backend=:gpu requires CUDA.jl and ChannelflowCUDAExt."))
+        return _to_gpu_vector[](x)
+    end
+    throw(ArgumentError("Unsupported backend=$(backend). Use :cpu or :gpu."))
+end
+
 function jacobian_action(dsi::FunctionDSI, x::AbstractVector, dx::AbstractVector, gx::AbstractVector;
                          eps_dx::Real = 1e-7, centered::Bool = false)
     if dsi.jacobian !== nothing
@@ -45,9 +96,12 @@ function jacobian_action(dsi::FunctionDSI, x::AbstractVector, dx::AbstractVector
     step_norm = norm(dx)
     eps = step_norm < eps_dx ? one(eltype(x)) : eps_dx / step_norm
     if centered
-        return (eval_dsi(dsi, x .+ 0.5 * eps .* dx) .- eval_dsi(dsi, x .- 0.5 * eps .* dx)) ./ eps
+        gp = _vector_like(eval_dsi(dsi, x .+ 0.5 * eps .* dx), gx)
+        gm = _vector_like(eval_dsi(dsi, x .- 0.5 * eps .* dx), gx)
+        return (gp .- gm) ./ eps
     end
-    return (eval_dsi(dsi, x .+ eps .* dx) .- gx) ./ eps
+    gp = _vector_like(eval_dsi(dsi, x .+ eps .* dx), gx)
+    return (gp .- gx) ./ eps
 end
 
 function jacobian_action(dsi::ParamDSI, x::AbstractVector, dx::AbstractVector, gx::AbstractVector;
@@ -58,20 +112,23 @@ function jacobian_action(dsi::ParamDSI, x::AbstractVector, dx::AbstractVector, g
     step_norm = norm(dx)
     eps = step_norm < eps_dx ? one(eltype(x)) : eps_dx / step_norm
     if centered
-        return (eval_dsi(dsi, x .+ 0.5 * eps .* dx) .- eval_dsi(dsi, x .- 0.5 * eps .* dx)) ./ eps
+        gp = _vector_like(eval_dsi(dsi, x .+ 0.5 * eps .* dx), gx)
+        gm = _vector_like(eval_dsi(dsi, x .- 0.5 * eps .* dx), gx)
+        return (gp .- gm) ./ eps
     end
-    return (eval_dsi(dsi, x .+ eps .* dx) .- gx) ./ eps
+    gp = _vector_like(eval_dsi(dsi, x .+ eps .* dx), gx)
+    return (gp .- gx) ./ eps
 end
 
-mutable struct GMRES{T}
+mutable struct GMRES{T,QT<:AbstractMatrix{T},VT<:AbstractVector{T}}
     m::Int
     niter::Int
     n::Int
     condition::T
     h::Matrix{T}
-    q::Matrix{T}
-    qn::Vector{T}
-    xn::Vector{T}
+    q::QT
+    qn::VT
+    xn::VT
     bnorm::T
     residual_value::T
 end
@@ -79,11 +136,15 @@ end
 function GMRES(b::AbstractVector{T}, niterations::Integer, min_condition::Real = 1e-13) where {T<:Real}
     m = length(b)
     bnorm = norm(b)
-    qn = bnorm == 0 ? zeros(T, m) : collect(b ./ bnorm)
-    q = zeros(T, m, 1)
+    qn = _zeros_like(b, m)
+    if bnorm != 0
+        qn .= b ./ bnorm
+    end
+    q = _zeros_like(b, m, 1)
     q[:, 1] .= qn
-    return GMRES{T}(m, Int(niterations), 0, T(min_condition), zeros(T, niterations + 1, niterations), q, qn,
-                    zeros(T, m), bnorm, bnorm == 0 ? zero(T) : one(T))
+    xn = _zeros_like(b, m)
+    return GMRES{T,typeof(q),typeof(qn)}(m, Int(niterations), 0, T(min_condition), zeros(T, niterations + 1, niterations), q, qn,
+                                         xn, bnorm, bnorm == 0 ? zero(T) : one(T))
 end
 
 function test_vector(g::GMRES)
@@ -92,7 +153,7 @@ end
 
 function iterate!(g::GMRES{T}, aq::AbstractVector{T}) where {T}
     g.n == g.niter && return g
-    v = collect(aq)
+    v = copy(aq)
     for j in 1:(g.n + 1)
         qj = view(g.q, :, j)
         g.h[j, g.n + 1] = dot(qj, v)
@@ -107,7 +168,7 @@ function iterate!(g::GMRES{T}, aq::AbstractVector{T}) where {T}
         v ./= vnorm
         if size(g.q, 2) <= g.n + 1
             newsize = min(size(g.q, 2) + 100, g.niter + 2)
-            resize_q = zeros(T, g.m, newsize)
+            resize_q = _zeros_like(g.q, g.m, newsize)
             resize_q[:, 1:size(g.q, 2)] .= g.q
             g.q = resize_q
         end
@@ -121,7 +182,8 @@ function iterate!(g::GMRES{T}, aq::AbstractVector{T}) where {T}
     bk[1] = g.bnorm
     y = hn \ bk
     g.residual_value = norm(hn * y - bk) / norm(bk)
-    g.xn .= g.q[:, 1:(g.n + 1)] * y
+    y_backend = _vector_like(y, g.qn)
+    g.xn .= g.q[:, 1:(g.n + 1)] * y_backend
     g.n += 1
     return g
 end
@@ -129,17 +191,17 @@ end
 solution(g::GMRES) = g.xn
 residual(g::GMRES) = g.residual_value
 
-mutable struct FGMRES{T}
-    gmres::GMRES{T}
-    z::Matrix{T}
-    az::Matrix{T}
+mutable struct FGMRES{T,QT<:AbstractMatrix{T},VT<:AbstractVector{T}}
+    gmres::GMRES{T,QT,VT}
+    z::QT
+    az::QT
 end
 
 function FGMRES(b::AbstractVector{T}, niterations::Integer, min_condition::Real = 1e-13) where {T<:Real}
     gm = GMRES(b, niterations, min_condition)
-    z = zeros(T, length(b), 1)
-    az = zeros(T, length(b), 1)
-    return FGMRES{T}(gm, z, az)
+    z = _zeros_like(b, length(b), 1)
+    az = _zeros_like(b, length(b), 1)
+    return FGMRES{T,typeof(z),typeof(gm.qn)}(gm, z, az)
 end
 
 test_vector(f::FGMRES) = test_vector(f.gmres)
@@ -150,8 +212,8 @@ function iterate!(f::FGMRES{T}, q::AbstractVector{T}, aq::AbstractVector{T}) whe
     n = f.gmres.n + 1
     if size(f.z, 2) < n
         newsize = min(size(f.z, 2) + 100, f.gmres.niter + 2)
-        z = zeros(T, size(f.z, 1), newsize)
-        az = zeros(T, size(f.az, 1), newsize)
+        z = _zeros_like(f.z, size(f.z, 1), newsize)
+        az = _zeros_like(f.az, size(f.az, 1), newsize)
         z[:, 1:size(f.z, 2)] .= f.z
         az[:, 1:size(f.az, 2)] .= f.az
         f.z = z
@@ -161,13 +223,14 @@ function iterate!(f::FGMRES{T}, q::AbstractVector{T}, aq::AbstractVector{T}) whe
     f.az[:, n] .= aq
     iterate!(f.gmres, aq)
     y = (@view f.gmres.h[1:(f.gmres.n + 1), 1:f.gmres.n]) \ vcat(f.gmres.bnorm, zeros(T, f.gmres.n))
-    f.gmres.xn .= f.z[:, 1:f.gmres.n] * y
+    y_backend = _vector_like(y, f.gmres.qn)
+    f.gmres.xn .= f.z[:, 1:f.gmres.n] * y_backend
     return f
 end
 
-mutable struct BiCGStab{T}
-    r::Vector{T}
-    r0::Vector{T}
+mutable struct BiCGStab{T,VT<:AbstractVector{T}}
+    r::VT
+    r0::VT
     r0_sqnorm::T
     rhs_sqnorm::T
     rho::T
@@ -175,22 +238,23 @@ mutable struct BiCGStab{T}
     omega::T
     rho_old::T
     beta::T
-    v::Vector{T}
-    p::Vector{T}
-    s::Vector{T}
-    t::Vector{T}
-    x::Vector{T}
-    best_solution::Vector{T}
+    v::VT
+    p::VT
+    s::VT
+    t::VT
+    x::VT
+    best_solution::VT
     residual_value::T
 end
 
 function BiCGStab(rhs::AbstractVector{T}) where {T<:Real}
     n = length(rhs)
-    r = collect(rhs)
+    r = copy(rhs)
     rhs_sqnorm = dot(rhs, rhs)
-    return BiCGStab{T}(r, copy(r), dot(r, r), rhs_sqnorm, one(T), one(T), one(T), zero(T), zero(T),
-                       zeros(T, n), zeros(T, n), zeros(T, n), zeros(T, n), zeros(T, n), zeros(T, n),
-                       sqrt(dot(r, r) / rhs_sqnorm))
+    residual0 = rhs_sqnorm > 0 ? sqrt(dot(r, r) / rhs_sqnorm) : zero(T)
+    return BiCGStab{T,typeof(r)}(r, copy(r), dot(r, r), rhs_sqnorm, one(T), one(T), one(T), zero(T), zero(T),
+                                 _zeros_like(rhs, n), _zeros_like(rhs, n), _zeros_like(rhs, n), _zeros_like(rhs, n), _zeros_like(rhs, n), _zeros_like(rhs, n),
+                                 residual0)
 end
 
 function step1!(b::BiCGStab)
@@ -252,6 +316,7 @@ Base.@kwdef struct NewtonSearchFlags
     lambda_min::Float64 = 0.2
     lambda_max::Float64 = 1.5
     g_ratio::Float64 = 10.0
+    backend::Symbol = :cpu
 end
 
 struct NewtonAlgorithm
@@ -277,9 +342,10 @@ end
 function _linear_step(dsi::AbstractDSI, x::AbstractVector, gx::AbstractVector, flags::NewtonSearchFlags; nsolver::Int = flags.n_solver)
     n = length(x)
     if norm(gx) == 0
-        return zeros(eltype(x), n), 0.0
+        return _zeros_like(x, n), 0.0
     end
     if flags.solver == :direct
+        flags.backend === :gpu && throw(ArgumentError("solver=:direct is not supported with backend=:gpu; use solver=:gmres."))
         j = zeros(eltype(x), n, n)
         for i in 1:n
             e = zeros(eltype(x), n)
@@ -353,8 +419,8 @@ function _hookstep_accept(
 end
 
 function solve(alg::NewtonAlgorithm, dsi::AbstractDSI, x0::AbstractVector)
-    x = collect(x0)
-    gx = eval_dsi(dsi, x)
+    x = _copy_to_backend(x0, alg.flags.backend)
+    gx = _vector_like(eval_dsi(dsi, x), x)
     delta = alg.flags.delta
     nsolver = min(max(1, alg.flags.n_solver), max(1, alg.flags.n_solver_max))
     gx_prev = norm(gx)
@@ -440,7 +506,8 @@ function _augment_newton_flags(flags::NewtonSearchFlags, n_unknown::Int)
                              improve_good = flags.improve_good,
                              lambda_min = flags.lambda_min,
                              lambda_max = flags.lambda_max,
-                             g_ratio = flags.g_ratio)
+                             g_ratio = flags.g_ratio,
+                             backend = flags.backend)
 end
 
 function continue_branch(dsi::ParamDSI, x_init::AbstractVector, μ_start::Real;
